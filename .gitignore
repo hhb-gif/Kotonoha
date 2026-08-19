@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+*.log
+
+# 环境变量与凭据
+.env
+.env.*
+*.credentials.yaml
+!*.example
+
+# 会话与存储
+sessions/
+storages/
+.credentials.yaml
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 临时
+temp/
+*.tmp
