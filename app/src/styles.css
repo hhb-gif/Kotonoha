@@ -1,0 +1,610 @@
+/* ============ Kotonoha 视觉小说风格 ============ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  /* 中英文统一用微软雅黑渲染（Windows），避免中英混排字体不一；日系字体 fallback */
+  font-family: 'Microsoft YaHei', 'Yu Gothic', 'Hiragino Sans', 'Hiragino Sans GB', 'PingFang SC', sans-serif;
+  font-weight: 400;
+  background: #10131f;
+  color: #f2eef5;
+  user-select: none;
+}
+
+/* ---- 舞台：全屏画布 ---- */
+.stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---- 背景层 ---- */
+.background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.background-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: bg-fade-in 1.2s ease-out;
+}
+
+.background-veil {
+  position: absolute;
+  inset: 0;
+  /* 渐变遮罩：上下压暗，保证文字可读 */
+  background: linear-gradient(
+    180deg,
+    rgba(10, 8, 18, 0.35) 0%,
+    rgba(10, 8, 18, 0.15) 35%,
+    rgba(8, 6, 16, 0.55) 78%,
+    rgba(8, 6, 16, 0.82) 100%
+  );
+}
+
+/* ---- 角色立绘（右侧） ---- */
+.character-sprite {
+  position: absolute;
+  right: 6vw;
+  bottom: 0;
+  height: 88%;
+  z-index: 1;
+  animation: sprite-in 0.9s ease-out;
+}
+
+.character-sprite img {
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 24px rgba(200, 160, 220, 0.25));
+}
+
+/* ---- 顶部标题栏 ---- */
+.top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  font-size: 15px;
+  letter-spacing: 2px;
+  background: linear-gradient(180deg, rgba(8, 6, 16, 0.55), transparent);
+}
+
+.top-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  color: #e8d8f2;
+  text-shadow: 0 0 12px rgba(220, 180, 255, 0.45);
+}
+
+.top-divider {
+  opacity: 0.4;
+}
+
+.top-scene,
+.top-save {
+  opacity: 0.85;
+  font-size: 13px;
+}
+
+/* ---- 选择肢 ---- */
+.choice-list {
+  position: absolute;
+  right: 10vw;
+  top: 38%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fade-up 0.4s ease-out;
+}
+
+.choice-item {
+  min-width: 260px;
+  padding: 12px 22px;
+  font-family: inherit;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #f2eef5;
+  background: rgba(20, 16, 32, 0.82);
+  border: 1px solid rgba(220, 190, 245, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.choice-item:hover {
+  background: rgba(110, 80, 150, 0.6);
+  border-color: rgba(240, 220, 255, 0.8);
+  transform: translateX(4px);
+}
+
+/* ---- 底部对话框 ---- */
+.dialog-box {
+  position: absolute;
+  left: 50%;
+  bottom: 88px; /* 给按钮栏留空间 */
+  transform: translateX(-50%);
+  z-index: 3;
+  width: min(76vw, 1000px);
+  min-height: 128px;
+  padding: 18px 26px 22px;
+  background: rgba(10, 8, 18, 0.72); /* 半透明黑底 */
+  border: 1px solid rgba(230, 210, 245, 0.16);
+  border-radius: 18px; /* 日系圆角 */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: fade-up 0.45s ease-out;
+}
+
+.dialog-name {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 3px 16px;
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #1a1326;
+  background: linear-gradient(90deg, #e6c9f5, #b8a2e0);
+  border-radius: 10px 10px 10px 2px;
+}
+
+.dialog-text {
+  font-size: 17px;
+  line-height: 1.9;
+  letter-spacing: 1px;
+  min-height: 64px;
+}
+
+/* 页停留提示：等待 Enter 推进 */
+.dialog-advance {
+  position: absolute;
+  right: 26px;
+  bottom: 10px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: rgba(230, 210, 250, 0.65);
+  animation: advance-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes advance-blink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* ---- 打字机光标 ---- */
+.typewriter-caret {
+  display: inline-block;
+  width: 3px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #f0d8ff;
+}
+
+.typewriter-caret.blink {
+  animation: caret-blink 0.9s steps(1) infinite;
+}
+
+/* ---- 底部控制区 ---- */
+.input-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(76vw, 1000px);
+}
+
+.input-field {
+  flex: 1;
+  padding: 13px 20px;
+  font-family: inherit;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: #f2eef5;
+  background: rgba(14, 11, 24, 0.75);
+  border: 1px solid rgba(220, 190, 245, 0.28);
+  border-radius: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-field:focus {
+  border-color: rgba(230, 200, 255, 0.7);
+}
+
+.input-field:disabled {
+  opacity: 0.6;
+}
+
+.input-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #e8ddf2;
+  background: rgba(30, 24, 48, 0.72);
+  border: 1px solid rgba(220, 190, 245, 0.3);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background: rgba(110, 80, 150, 0.55);
+  border-color: rgba(240, 220, 255, 0.7);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ---- 提示 toast ---- */
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  z-index: 9;
+  padding: 10px 26px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  background: rgba(20, 14, 32, 0.9);
+  border: 1px solid rgba(230, 210, 255, 0.4);
+  border-radius: 999px;
+  animation: toast-in 0.3s ease-out;
+}
+
+/* ---- 动画 ---- */
+@keyframes bg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sprite-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ============ 设置面板 ============ */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 4, 12, 0.72);
+  backdrop-filter: blur(4px);
+  animation: bg-fade-in 0.25s ease-out;
+}
+
+.settings-panel {
+  position: relative;
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 28px 32px 24px;
+  background: rgba(12, 9, 22, 0.94);
+  border: 1px solid rgba(230, 210, 245, 0.18);
+  border-radius: 18px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: settings-in 0.3s ease-out;
+}
+
+.settings-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  color: #e8ddf2;
+  background: rgba(30, 24, 48, 0.72);
+  border: 1px solid rgba(220, 190, 245, 0.3);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-close:hover {
+  background: rgba(110, 80, 150, 0.55);
+  border-color: rgba(240, 220, 255, 0.7);
+}
+
+.settings-title {
+  margin-bottom: 18px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  color: #e8d8f2;
+  text-shadow: 0 0 12px rgba(220, 180, 255, 0.45);
+}
+
+.settings-section {
+  margin-bottom: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(220, 190, 245, 0.12);
+}
+
+.settings-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.settings-section-title {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: #c9b8e0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-slider {
+  flex: 1;
+  accent-color: #b8a2e0;
+  cursor: pointer;
+}
+
+.settings-value {
+  min-width: 84px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #b8a2e0;
+}
+
+.settings-scene-btn {
+  padding: 10px 18px;
+}
+
+.settings-scene-btn.active {
+  color: #1a1326;
+  background: linear-gradient(90deg, #e6c9f5, #b8a2e0);
+  border-color: rgba(240, 220, 255, 0.8);
+}
+
+/* 立绘开关（checkbox 自绘） */
+.settings-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.settings-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-switch-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(30, 24, 48, 0.9);
+  border: 1px solid rgba(220, 190, 245, 0.3);
+  border-radius: 999px;
+  transition: all 0.2s;
+}
+
+.settings-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #e8ddf2;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.settings-switch input:checked + .settings-switch-track {
+  background: linear-gradient(90deg, #e6c9f5, #b8a2e0);
+  border-color: rgba(240, 220, 255, 0.7);
+}
+
+.settings-switch input:checked + .settings-switch-track + .settings-switch-thumb {
+  transform: translateX(20px);
+}
+
+/* 模型与密钥 */
+.settings-model-info {
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.settings-model-current {
+  color: #e8ddf2;
+}
+
+.settings-muted {
+  color: rgba(242, 238, 245, 0.55);
+}
+
+.settings-error {
+  color: #f0a0a0;
+}
+
+.settings-key-row {
+  flex-wrap: wrap;
+}
+
+.settings-select,
+.settings-input {
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #f2eef5;
+  background: rgba(14, 11, 24, 0.75);
+  border: 1px solid rgba(220, 190, 245, 0.28);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-select:focus,
+.settings-input:focus {
+  border-color: rgba(230, 200, 255, 0.7);
+}
+
+.settings-select {
+  min-width: 150px;
+  flex: 0 1 40%;
+}
+
+.settings-select:disabled {
+  opacity: 0.6;
+}
+
+.settings-input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.settings-save-btn {
+  padding: 10px 16px;
+}
+
+.settings-ref-line {
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.settings-notice {
+  margin-top: 14px;
+  padding: 8px 16px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  border-radius: 10px;
+  animation: fade-up-in 0.25s ease-out;
+}
+
+.settings-notice.ok {
+  color: #b8e0c9;
+  background: rgba(20, 60, 40, 0.55);
+  border: 1px solid rgba(140, 220, 170, 0.4);
+}
+
+.settings-notice.err {
+  color: #f0b0b0;
+  background: rgba(60, 20, 24, 0.55);
+  border: 1px solid rgba(240, 130, 130, 0.4);
+}
+
+@keyframes settings-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes fade-up-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============ 玩家回合输入（对话框内） ============ */
+
+.player-input {
+  cursor: default;
+}
+
+.player-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.player-input-field {
+  flex: 1;
+  padding: 12px 18px;
+  font-family: inherit;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: #f2eef5;
+  background: rgba(14, 11, 24, 0.75);
+  border: 1px solid rgba(220, 190, 245, 0.28);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.player-input-field:focus {
+  border-color: rgba(230, 200, 255, 0.7);
+}
+
+.player-input-send {
+  padding: 12px 22px;
+}
+
+.player-input-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: rgba(242, 238, 245, 0.5);
+  animation: caret-blink 2.4s steps(1) infinite;
+}
