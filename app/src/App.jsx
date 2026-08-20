@@ -14,6 +14,7 @@ import SettingsPanel from './components/SettingsPanel'
 import MainMenu from './components/MainMenu'
 import SelectScreen from './components/SelectScreen'
 import EscapePanel from './components/EscapePanel'
+import LogViewer from './components/LogViewer'
 
 // 选择肢：本次仅预留骨架，不激活
 const DUMMY_CHOICES = []
@@ -79,6 +80,7 @@ export default function App() {
   const [page, setPage] = useState('main')
   const [selectMode, setSelectMode] = useState('new') // new：可新建故事/存档；load：只能载入已有
   const [escOpen, setEscOpen] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
   const [modelInfo, setModelInfo] = useState(null)
   const [skillState, setSkillState] = useState(() => skills.getSkillState())
 
@@ -329,12 +331,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [handleDialogClick, settingsOpen, escOpen])
 
-  // ---- ESC：对话页内打开/关闭角色面板 ----
+  // ---- ESC：对话页内打开/关闭角色面板（日志打开时优先关日志）----
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== 'Escape') return
       if (pageRef.current !== 'dialog') return
+      if (logOpen) {
+        setLogOpen(false)
+        return
+      }
       setEscOpen((v) => !v)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [logOpen])
+
+  // ---- 快捷键 L：对话页内打开历史记录 ----
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== 'l' && e.key !== 'L') return
+      if (pageRef.current !== 'dialog') return
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return
+      setLogOpen((v) => !v)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -521,6 +539,7 @@ export default function App() {
         scene={SCENE_LABELS[settings.scene] || settings.scene}
         savedAt={savedAt}
         onBack={goMain}
+        onLog={() => setLogOpen(true)}
       />
 
       <ChoiceList choices={DUMMY_CHOICES} onPick={() => {}} visible={false} />
@@ -574,6 +593,12 @@ export default function App() {
         messageCount={messages.length}
         onSave={handlePanelSave}
         onBackToMenu={goMain}
+      />
+
+      <LogViewer
+        open={logOpen}
+        onClose={() => setLogOpen(false)}
+        messages={messages}
       />
 
       {toast && <div className="toast">{toast}</div>}

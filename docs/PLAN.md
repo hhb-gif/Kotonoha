@@ -52,8 +52,8 @@ docs/PLAN.md
 # 阶段二：游戏化 Agent 入口 + App 化（规划）
 
 > 记录时间：2026-08-20
-> 状态：🔄 执行中（第一轮已完成：故事/存档体系、主界面/选择界面、ESC 面板+技能硬调控、Electron 壳；详见 `docs/records/2026-08-20-phase2-round1.md`）
-> 待办：Electron 打包试跑（build:app）、审批裁决真实调用实测、日志逐条回看 UI
+> 状态：🔄 执行中（第一轮：故事/存档/主界面/ESC/Electron；第二轮：UI 重构四反馈——主界面美化、项目点选制、ESC 页签化、历史日志；详见 `docs/records/2026-08-20-phase2-round1.md` + `phase2-round2.md`）
+> 待办：Electron 重新打包（UI 重构后产物过期）、审批裁决真实调用实测
 
 ## 目标
 

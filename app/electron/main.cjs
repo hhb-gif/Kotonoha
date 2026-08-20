@@ -1,7 +1,7 @@
 // Electron 主进程（Kotonoha 桌面壳）
 // 未打包（electron .）时加载 vite dev server；打包后加载 dist/index.html。
 // 页面与 dsh 的通信走 HTTP/WS 直连 127.0.0.1:3080，由 preload 注入地址。
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 
 const DEV_URL = process.env.KOTONOHA_DEV_URL || 'http://127.0.0.1:5173'
@@ -33,6 +33,17 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 目录选择（新建项目选工作区）：返回绝对路径或 null（取消）
+  ipcMain.handle('pick-directory', async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: '选择项目工作区',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+  })
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
