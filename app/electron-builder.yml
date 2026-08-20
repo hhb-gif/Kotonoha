@@ -2,18 +2,25 @@
 appId: com.kotonoha.app
 productName: Kotonoha
 directories:
-  output: release
+  output: dist-final
 files:
   - dist/**/*
   - electron/**/*
 asar: true
 win:
   target:
-    - nsis
-    - portable
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # 不签名、不编辑可执行文件（跳过 winCodeSign 解压符号链接失败问题，Windows 无该权限）
+  signAndEditExecutable: false
 nsis:
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: Kotonoha
+portable:
+  artifactName: ${productName}-${version}-portable-${arch}.${ext}

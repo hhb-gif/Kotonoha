@@ -1,7 +1,16 @@
 # Node
 node_modules/
 dist/
+dist-*/
+release/
+release-*/
 *.log
+
+# 打包产物
+app/dist-final/
+app/release/
+app/dist-electron/
+app/dist-el/
 
 # 环境变量与凭据
 .env
