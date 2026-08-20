@@ -52,8 +52,8 @@ docs/PLAN.md
 # 阶段二：游戏化 Agent 入口 + App 化（规划）
 
 > 记录时间：2026-08-20
-> 状态：🔄 执行中（第一轮：故事/存档/主界面/ESC/Electron；第二轮：UI 重构四反馈——主界面美化、项目点选制、ESC 页签化、历史日志；详见 `docs/records/2026-08-20-phase2-round1.md` + `phase2-round2.md`）
-> 待办：Electron 重新打包（UI 重构后产物过期）、审批裁决真实调用实测
+> 状态：🔄 执行中（第一轮：故事/存档/主界面/ESC/Electron；第二轮：UI 重构四反馈；第三轮：首页紧凑化+去重复+日志下移+断句加长+ESC 九页签+slash 命令+agent 调研；详见 docs/records/2026-08-20-phase2-round{1,2,3}.md）
+> 待办：侧边栏落地（调研报告 docs/research/agent-features-2026-08-20.md）、credentials.describe 格式确认、Electron 重新打包
 
 ## 目标
 

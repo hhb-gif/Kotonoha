@@ -39,7 +39,8 @@ function cleanMarkdown(text) {
 }
 
 // 把长文本切成「页」：每页最多 maxLines 行；单行超过 maxChars 按标点切段
-function splitIntoPages(text, maxLines = 2, maxChars = 80) {
+// maxLines=4：用户反馈断句太碎，每次显示的话语要多一点
+function splitIntoPages(text, maxLines = 4, maxChars = 100) {
   text = cleanMarkdown(text)
   if (!text) return []
   const pages = []
@@ -372,10 +373,6 @@ export default function App() {
     isPlayerTurnRef.current = isPlayerTurn
   }, [isPlayerTurn])
 
-  const handleSend = useCallback((text) => {
-    bridge.sendMessage(text)
-  }, [])
-
   // ---- 设置 ----
   const handleSettingsChange = useCallback((partial) => {
     setSettingsState(setSettings(partial))
@@ -391,6 +388,65 @@ export default function App() {
     setSelectMode(mode)
     setPage('select')
   }, [])
+
+  // ---- 发送消息 + 斜杠命令（本地解析，不进 dsh；dsh 的 / 命令路由不暴露 HTTP）----
+  const handleSend = useCallback((text) => {
+    const t = (text || '').trim()
+    if (!t) {
+      bridge.sendMessage(t)
+      return
+    }
+    if (t.startsWith('/')) {
+      const [cmd, ...rest] = t.split(/\s+/)
+      const arg = rest.join(' ').trim()
+      switch (cmd.toLowerCase()) {
+        case '/help':
+          showToast('/help /new /save /load /model /skills /log /continue')
+          break
+        case '/new':
+          goMain()
+          showToast('已返回主界面，可开始新对话')
+          break
+        case '/save': {
+          const ctx = stories.getContext()
+          const curName =
+            ctx?.saveId && ctx?.storyId ? stories.getSave(ctx.storyId, ctx.saveId)?.name : null
+          const name = arg || curName || '对话'
+          bridge.saveNow(name).then((res) => {
+            if (res.ok) {
+              setSavedAt(Date.now())
+              showToast(`已存档「${name}」`)
+            } else {
+              showToast(res.error || '存档失败')
+            }
+          })
+          break
+        }
+        case '/load':
+          goMain()
+          showToast('已返回主界面，可载入其他对话')
+          break
+        case '/model':
+          setSettingsOpen(true)
+          showToast('设置面板已打开')
+          break
+        case '/skills':
+          setEscOpen(true)
+          showToast('ESC 面板已打开 → 技能')
+          break
+        case '/log':
+          setLogOpen(true)
+          break
+        case '/continue':
+          showToast('已处于当前对话中')
+          break
+        default:
+          showToast(`未知命令「${cmd}」，输入 /help 查看`)
+      }
+      return
+    }
+    bridge.sendMessage(t)
+  }, [showToast, goMain])
 
   // 「继续」：上下文存在且有效 → 直接回到最近故事+存档；否则回退到选择界面
   const goContinue = useCallback(async () => {
@@ -539,7 +595,6 @@ export default function App() {
         scene={SCENE_LABELS[settings.scene] || settings.scene}
         savedAt={savedAt}
         onBack={goMain}
-        onLog={() => setLogOpen(true)}
       />
 
       <ChoiceList choices={DUMMY_CHOICES} onPick={() => {}} visible={false} />
@@ -563,7 +618,7 @@ export default function App() {
 
       <InputBar
         disabled={status !== 'ready'}
-        onMenu={goMain}
+        onLog={() => setLogOpen(true)}
         onSettings={() => setSettingsOpen(true)}
       />
 

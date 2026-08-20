@@ -400,6 +400,88 @@ export async function sendMessage(text) {
   }
 }
 
+// ---- Agent 面板扩展方法（ESC 面板 会话/Git/MCP/凭据 页签使用）----
+
+/** Fork 当前会话（dsh session.fork）：返回新会话 ID。 */
+export async function sessionFork() {
+  if (!state.sessionId) return { ok: false, error: '会话未就绪' }
+  try {
+    const value = await api('session.fork', { sessionId: state.sessionId })
+    const id = value?.sessionId || value?.id || null
+    return id ? { ok: true, sessionId: id } : { ok: false, error: 'fork 返回异常' }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 重命名当前会话（dsh session.rename）。 */
+export async function sessionRename(label) {
+  if (!state.sessionId) return { ok: false, error: '会话未就绪' }
+  const name = (label || '').trim()
+  if (!name) return { ok: false, error: '名称不能为空' }
+  try {
+    await api('session.rename', { sessionId: state.sessionId, label: name })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** Git 状态：dsh 无 shell 接口（探测确认），改为请言叶在会话内执行并回显到对话。 */
+export async function getGitStatus() {
+  if (state.busy) return { ok: false, output: '', error: '模型正在回复中，稍后再试' }
+  try {
+    await sendMessage('请执行 git status --short -b，并简要汇报当前工作区状态')
+    return { ok: true, output: '已请言叶执行「git status --short -b」——输出将出现在对话中' }
+  } catch (err) {
+    return { ok: false, output: '', error: err.message }
+  }
+}
+
+/** 给当前会话发一条消息（ESC 面板「请言叶执行…」按钮用，效果等同普通发送）。 */
+export async function sendCommandToAgent(text) {
+  if (state.busy) return { ok: false, error: '模型正在回复中，稍后再试' }
+  try {
+    await sendMessage(text)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 凭据状态（dsh credentials.describe，结构防御式解析；失败返回 null）。 */
+export async function getCredentialsStatus() {
+  const refs = ['DEEPSEEK_API_KEY', 'OPENCODE_API_KEY']
+  try {
+    const value = await api('credentials.describe', { refs })
+    const list = value?.refs || value?.items || value || []
+    const out = {}
+    for (const item of list) {
+      if (!item) continue
+      const ref = item.ref || item.name || item.key
+      if (!ref) continue
+      out[ref] = {
+        configured: !!item.configured || !!item.set || !!item.present,
+        source: item.source || item.provider || null,
+      }
+    }
+    return out
+  } catch (err) {
+    return null
+  }
+}
+
+/** MCP 服务器列表（dsh mcp.list；不存在则返回 null）。 */
+export async function getMcpInfo() {
+  try {
+    const value = await api('mcp.list', {})
+    const items = value?.servers || value?.items || value?.mcpServers || []
+    return { items }
+  } catch {
+    return null
+  }
+}
+
 // ---- 初始化 ----
 let initStarted = false
 
@@ -424,5 +506,11 @@ export default {
   saveNow,
   updateSavePreview,
   leaveDialog,
+  sessionFork,
+  sessionRename,
+  getGitStatus,
+  sendCommandToAgent,
+  getCredentialsStatus,
+  getMcpInfo,
   CHARACTERS,
 }
