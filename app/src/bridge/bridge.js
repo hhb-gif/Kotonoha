@@ -3,8 +3,8 @@
 //
 // 协议（已验证，见 docs/verification-report.md）：
 //   - HTTP POST /api/<method>  Typert RPC（client-request → server-response）
-//   - WebSocket /api/events.mux  下行事件流（session/event）
-// 浏览器经 Vite proxy 访问 /api，规避 dsh 的 Origin 校验。
+//   - WebSocket /api/events.mux  下行事件流（session/event + approval/requested）
+// 浏览器经 Vite proxy 访问 /api；Electron 下由 preload 注入 __KOTONOHA_API_BASE__。
 //
 // 对外事件（与 UI 层约定，保持稳定）：
 //   { type: 'user',  text, name }
@@ -12,8 +12,14 @@
 //   { type: 'model:done', text, name }
 //   { type: 'replay', messages }        // 历史重放（初始化/读档）
 //   { type: 'status', state, detail }   // 'thinking' | 'action' | 'ready'
+//   { type: 'approval', decision, toolName, reason, approvalId } // 越界审批自动裁决
 //   { type: 'error', message }
+//
+// 会话管理：故事(工作区)/存档(会话) 见 stories.js；技能调控见 skills.js。
 // ============================================================
+
+import * as stories from './stories'
+import * as skills from './skills'
 
 // 角色元信息：单模型单角色，后续多模型 = 多角色，这里先写死
 const CHARACTERS = {
@@ -24,7 +30,12 @@ const CHARACTERS = {
   },
 }
 
-const SAVE_KEY = 'kotonoha:save'
+// Electron 打包后无 vite proxy：preload 注入实际地址；浏览器 dev 走相对路径
+const API_BASE = (typeof window !== 'undefined' && window.__KOTONOHA_API_BASE__) || ''
+const WS_BASE =
+  (typeof window !== 'undefined' && window.__KOTONOHA_WS_BASE__) ||
+  `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`
+
 const BASE_CWD = 'E:\\Kotonoha'
 // 免费模型被限流时降级到 deepseek-official（.credentials.yaml 已配 DEEPSEEK_API_KEY）
 const FALLBACK_PROVIDER = 'deepseek-official'
@@ -34,6 +45,7 @@ const FALLBACK_MODEL = 'deepseek-v4-flash'
 const state = {
   ws: null,
   sessionId: null,
+  cwd: BASE_CWD,
   busy: false,          // 有 turn 在执行
   degraded: false,      // 是否已降级模型
   pendingText: '',      // 当前 turn 的文本累积
@@ -49,7 +61,7 @@ export function onEvent(cb) {
 }
 
 function emit(event) {
-  console.log('[bridge] event →', event.type, event.detail || event.state || (event.text ? event.text.slice(0, 30) : ''))
+  console.log('[bridge] event →', event.type, event.detail || event.state || event.decision || (event.text ? event.text.slice(0, 30) : ''))
   listeners.forEach((cb) => {
     try {
       cb(event)
@@ -65,7 +77,7 @@ function rpcId() {
 }
 
 async function api(method, payload) {
-  const res = await fetch(`/api/${method}`, {
+  const res = await fetch(`${API_BASE}/api/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'client-request', rpcId: rpcId(), method, payload }),
@@ -82,23 +94,12 @@ async function api(method, payload) {
   return data.result.value
 }
 
-// ---- 会话存取（视觉小说式存档位）----
-function readSlot() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
 // ---- WebSocket 事件流 ----
 function connectWS() {
-  // 防重：已有连接（连接中或已打开）则跳过
   if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
     return
   }
-  const ws = new WebSocket(`ws://${location.host}/api/events.mux`)
+  const ws = new WebSocket(`${WS_BASE}/api/events.mux`)
   state.ws = ws
   ws.onopen = () => { console.log('[bridge] ws open'); emit({ type: 'status', state: 'ready' }) }
   ws.onmessage = (e) => {
@@ -106,6 +107,10 @@ function connectWS() {
     try {
       frame = JSON.parse(e.data)
     } catch {
+      return
+    }
+    if (frame.type === 'server-request' && frame.method === 'approval/requested') {
+      handleApprovalRequest(frame)
       return
     }
     const payload = frame.payload
@@ -117,12 +122,64 @@ function connectWS() {
 
   ws.onclose = () => {
     state.ws = null
-    // 简单自动重连（3s 后）
     setTimeout(() => {
       if (!state.ws) connectWS()
     }, 3000)
   }
   ws.onerror = () => ws.close()
+}
+
+// ---- 审批自动裁决（技能硬调控，实测见 docs/records/approval-probe-2026-08-20.md）----
+async function handleApprovalRequest(frame) {
+  const { rpcId: rpcId_ = '', payload } = frame || {}
+  const { sessionId, approvalId, toolName, callId, reason } = payload || {}
+  if (!rpcId_ || !sessionId || !approvalId) return
+  // 只裁决当前会话的审批；其他会话（如 dsh web 自己开的）由对应端应答
+  if (state.sessionId && sessionId !== state.sessionId) return
+  const decision = skills.decideApproval(skills.getSkillState(), toolName)
+  emit({ type: 'approval', decision, toolName, reason: reason || '', approvalId, callId })
+  const outcome = decision === 'deny' ? 'rejected' : 'allowed-once'
+  try {
+    const res = await fetch(`${API_BASE}/api/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'client-response',
+        rpcId: rpcId_,
+        result: { ok: true, value: { sessionId, approvalId, outcome } },
+      }),
+    })
+    const data = await res.json()
+    console.log('[bridge] approval respond →', outcome, toolName, data)
+    if (data?.accepted !== true) {
+      // 应答未被接受（可能重复/过期），审批仍挂起——超时兜底补一次拒绝
+      setTimeout(() => {
+        fetch(`${API_BASE}/api/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'client-response',
+            rpcId: rpcId_,
+            result: { ok: true, value: { sessionId, approvalId, outcome: 'rejected' } },
+          }),
+        }).catch(() => {})
+      }, 5000)
+    }
+  } catch (err) {
+    console.error('[bridge] approval respond failed:', err.message)
+    // 网络异常 → 5s 后重试拒绝（审批无超时，必须兜底）
+    setTimeout(() => {
+      fetch(`${API_BASE}/api/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-response',
+          rpcId: rpcId_,
+          result: { ok: true, value: { sessionId, approvalId, outcome: 'rejected' } },
+        }),
+      }).catch(() => {})
+    }, 5000)
+  }
 }
 
 function handleSessionEvent(ev) {
@@ -178,7 +235,6 @@ async function handleTurnError(reason) {
   const isRateLimit = /rate limit|429|limit/i.test(message)
 
   if (isRateLimit && !state.degraded) {
-    // 免费模型限流 → 降级 deepseek-official 后重试当前消息
     emit({ type: 'status', state: 'thinking', detail: '模型限流，正在切换备用模型…' })
     try {
       await api('session.selectModel', {
@@ -213,16 +269,14 @@ function historyToMessages(events) {
   for (const item of events || []) {
     const ev = item.event || item
     if (ev.type === 'user/message') {
-      // 跳过系统注入消息（runtime context / system-reminder 无 source 字段）
       if (!ev.data?.source || ev.data.source.kind !== 'user') continue
       const text = (ev.data?.content || []).map((c) => (c.type === 'text' ? c.text : '')).join('')
       if (!text) continue
       messages.push({ role: 'user', name: '你', text })
     } else if (ev.type === 'assistant/message') {
-      // 真实结构：data.message.content（reasoning / tool-call / text）
       const content = ev.data?.message?.content || ev.data?.content || []
       const text = content.map((c) => (c.type === 'text' ? c.text : '')).join('')
-      if (!text) continue // 跳过 reasoning / tool-call 中间步骤
+      if (!text) continue
       messages.push({ role: 'model', name: CHARACTERS.kotonoha.name, text })
     }
   }
@@ -237,47 +291,91 @@ async function replayHistory() {
 
 async function ensureSession() {
   if (state.sessionId) return
-  // 优先恢复存档位里的会话
-  const slot = readSlot()
-  if (slot?.sessionId) {
-    try {
-      await api('session.history', { sessionId: slot.sessionId })
-      state.sessionId = slot.sessionId
-      return
-    } catch {
-      // 会话已失效，走新建
-    }
-  }
-  const created = await api('session.create', { cwd: BASE_CWD })
+  const created = await api('session.create', { cwd: state.cwd })
   state.sessionId = created.sessionId
 }
 
-// ---- 对外接口 ----
+// ---- 故事 / 存档 会话入口（供 UI 主界面 / 选择界面调用）----
 
-let initStarted = false
-
-/**
- * 初始化：连接事件流 + 恢复/创建会话 + 重放历史。
- * 幂等：多次调用只执行一次（防止 React StrictMode / HMR 双跑）。
- * 结果通过事件通知（replay / status / error）。
- */
-export async function init() {
-  if (initStarted) return
-  initStarted = true
-  window.__bridgeDebug = { state, listeners: listeners.size, wsReady: state.ws ? state.ws.readyState : -1 } // 开发调试用
-  connectWS()
-  try {
-    await ensureSession()
-    await replayHistory()
-    emit({ type: 'status', state: 'ready' })
-  } catch (err) {
-    emit({ type: 'error', message: `初始化失败：${err.message}` })
+/** 进入故事下的一个存档（载入）。saveId 为空时自动建新会话。 */
+export async function enterStory(storyId, saveId) {
+  const story = stories.getStory(storyId)
+  if (!story) return { ok: false, error: '故事不存在' }
+  let sessionId = null
+  if (saveId) {
+    const save = stories.getSave(storyId, saveId)
+    if (save?.sessionId) {
+      try {
+        await api('session.history', { sessionId: save.sessionId })
+        sessionId = save.sessionId
+      } catch {
+        // 会话已失效 → 新建
+      }
+    }
   }
+  if (!sessionId) {
+    const created = await api('session.create', { cwd: story.path })
+    sessionId = created.sessionId
+    if (saveId) {
+      // 存档失效，原地重建同名存档
+      stories.createSave(storyId, { name: stories.getSave(storyId, saveId)?.name || '对话', sessionId })
+    }
+  }
+  state.sessionId = sessionId
+  state.cwd = story.path
+  state.degraded = false
+  state.pendingText = ''
+  state.pendingPrompt = null
+  stories.setContext(storyId, saveId || null)
+  stories.updateStory(storyId, { lastActiveAt: Date.now() })
+  if (saveId) stories.updateSave(storyId, saveId, { lastActiveAt: Date.now() })
+  await replayHistory()
+  emit({ type: 'status', state: 'ready' })
+  return { ok: true }
 }
 
-/**
- * 发送用户消息（真实对话，模型流式回复通过 model/model:done 事件推送）。
- */
+/** 新建存档：在故事下开启新会话（新游戏）。 */
+export async function newSave(storyId, saveName) {
+  const story = stories.getStory(storyId)
+  if (!story) return { ok: false, error: '故事不存在' }
+  const created = await api('session.create', { cwd: story.path })
+  const { save } = stories.createSave(storyId, { name: saveName, sessionId: created.sessionId })
+  state.sessionId = created.sessionId
+  state.cwd = story.path
+  state.degraded = false
+  state.pendingText = ''
+  state.pendingPrompt = null
+  stories.setContext(storyId, save.id)
+  stories.updateStory(storyId, { lastActiveAt: Date.now() })
+  emit({ type: 'replay', messages: [] })
+  emit({ type: 'status', state: 'ready' })
+  return { ok: true, save }
+}
+
+/** 对话中保存：覆盖当前存档 / 另存为新名（同名即覆盖）。 */
+export async function saveNow(name) {
+  if (!state.sessionId) return { ok: false, error: '会话未就绪' }
+  const ctx = stories.getContext()
+  if (!ctx?.storyId) return { ok: false, error: '未处于任何故事中' }
+  const { save } = stories.createSave(ctx.storyId, { name, sessionId: state.sessionId })
+  stories.setContext(ctx.storyId, save.id)
+  return { ok: true, save }
+}
+
+/** 模型回复完成时刷新当前存档预览（主界面「继续」卡片显示）。 */
+export function updateSavePreview(text) {
+  const ctx = stories.getContext()
+  if (!ctx?.storyId || !ctx?.saveId) return
+  stories.updateSave(ctx.storyId, ctx.saveId, { preview: text, lastActiveAt: Date.now() })
+}
+
+/** 离开对话（回主界面）：不销毁会话，保留 context 供「继续」。 */
+export function leaveDialog() {
+  // 仅断开 UI 绑定，会话保留在 dsh；再次进入由 enterStory 恢复
+}
+
+// ---- 对话 ----
+/** 发送用户消息（真实对话，模型流式回复通过 model/model:done 事件推送）。 */
 export async function sendMessage(text) {
   const trimmed = text.trim()
   console.log('[bridge] sendMessage enter', { trimmed, busy: state.busy, sessionId: state.sessionId })
@@ -286,10 +384,14 @@ export async function sendMessage(text) {
     await ensureSession()
     state.pendingPrompt = trimmed
     emit({ type: 'user', text: trimmed, name: '你' })
+    // 技能硬调控软层：按开关注入约束段
+    const constraint = skills.buildConstraintSegment(skills.getSkillState())
+    const content = [{ type: 'text', text: trimmed }]
+    if (constraint) content.push({ type: 'text', text: constraint })
     await api('session.prompt', {
       sessionId: state.sessionId,
       mode: 'queue',
-      content: [{ type: 'text', text: trimmed }],
+      content,
     })
   } catch (err) {
     emit({ type: 'error', message: `发送失败：${err.message}` })
@@ -298,63 +400,29 @@ export async function sendMessage(text) {
   }
 }
 
-/** 存档：把当前会话记录到存档位（视觉小说式：项目 = 存档） */
-export function saveSession() {
-  if (!state.sessionId) return false
-  try {
-    localStorage.setItem(
-      SAVE_KEY,
-      JSON.stringify({ sessionId: state.sessionId, savedAt: Date.now() })
-    )
-    return true
-  } catch {
-    return false
-  }
-}
+// ---- 初始化 ----
+let initStarted = false
 
-/** 读档：切回存档位里的会话并重放历史。@returns Promise<boolean> */
-export async function loadSession() {
-  const slot = readSlot()
-  if (!slot?.sessionId) return false
-  try {
-    await api('session.history', { sessionId: slot.sessionId })
-    state.sessionId = slot.sessionId
-    state.degraded = false
-    await replayHistory()
-    return true
-  } catch (err) {
-    emit({ type: 'error', message: `读档失败：${err.message}` })
-    return false
-  }
-}
-
-/** 新游戏：新建一个会话（新项目） */
-export async function newGame() {
-  try {
-    const created = await api('session.create', { cwd: BASE_CWD })
-    state.sessionId = created.sessionId
-    state.degraded = false
-    emit({ type: 'replay', messages: [] })
-    emit({ type: 'status', state: 'ready' })
-    return true
-  } catch (err) {
-    emit({ type: 'error', message: `新建失败：${err.message}` })
-    return false
-  }
-}
-
-/** 清档（设置面板备用） */
-export function clearSession() {
-  localStorage.removeItem(SAVE_KEY)
+/**
+ * 初始化：连接事件流 + 迁移旧存档。
+ * 注意：不再自动建会话——由 UI 主界面驱动（进入故事/存档时再建）。
+ */
+export async function init() {
+  if (initStarted) return
+  initStarted = true
+  stories.migrateLegacy()
+  connectWS()
+  window.__bridgeDebug = { state, listeners: listeners.size, wsReady: state.ws ? state.ws.readyState : -1 }
 }
 
 export default {
   init,
   sendMessage,
   onEvent,
-  saveSession,
-  loadSession,
-  newGame,
-  clearSession,
+  enterStory,
+  newSave,
+  saveNow,
+  updateSavePreview,
+  leaveDialog,
   CHARACTERS,
 }

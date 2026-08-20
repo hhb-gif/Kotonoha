@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import bridge from './bridge/bridge'
-import { getSettings, setSettings } from './bridge/settings'
+import { getSettings, setSettings, getModelInfo } from './bridge/settings'
+import * as stories from './bridge/stories'
+import * as skills from './bridge/skills'
 import Background from './components/Background'
 import CharacterSprite from './components/CharacterSprite'
 import DialogBox from './components/DialogBox'
@@ -9,6 +11,9 @@ import ChoiceList from './components/ChoiceList'
 import TopBar from './components/TopBar'
 import InputBar from './components/InputBar'
 import SettingsPanel from './components/SettingsPanel'
+import MainMenu from './components/MainMenu'
+import SelectScreen from './components/SelectScreen'
+import EscapePanel from './components/EscapePanel'
 
 // 选择肢：本次仅预留骨架，不激活
 const DUMMY_CHOICES = []
@@ -70,6 +75,14 @@ function splitIntoPages(text, maxLines = 2, maxChars = 80) {
 }
 
 export default function App() {
+  // ---- 页面路由：main（主界面）| select（选择界面）| dialog（对话界面）----
+  const [page, setPage] = useState('main')
+  const [selectMode, setSelectMode] = useState('new') // new：可新建故事/存档；load：只能载入已有
+  const [escOpen, setEscOpen] = useState(false)
+  const [modelInfo, setModelInfo] = useState(null)
+  const [skillState, setSkillState] = useState(() => skills.getSkillState())
+
+  // ---- 对话状态 ----
   const [messages, setMessages] = useState([])
   const [shownIndex, setShownIndex] = useState(0)   // 当前展示到第几条
   const [pageIndex, setPageIndex] = useState(0)     // 当前展示到该条的第几页
@@ -113,6 +126,10 @@ export default function App() {
   useEffect(() => {
     pageDoneRef.current = pageDone
   }, [pageDone])
+  const pageRef = useRef(page)
+  useEffect(() => {
+    pageRef.current = page
+  }, [page])
 
   // 开发调试：暴露实时状态 + 关键状态转换日志
   window.__appLog = window.__appLog || []
@@ -122,6 +139,7 @@ export default function App() {
   }
   useEffect(() => {
     window.__appDebug = {
+      page,
       messages: messages.map((m) => ({ role: m.role, text: (m.text || '').slice(0, 60) })),
       shownIndex, pageIndex, pageDone, typing, status, actionDetail,
       streamingText: streamingText.slice(0, 60), skipCounter, savedAt,
@@ -193,6 +211,7 @@ export default function App() {
         setStreamingText('')
         // 补全完成后从当前页继续（流式期间已按页显示，无全文闪现跳变）
         setTyping(false)
+        bridge.updateSavePreview(ev.text || '')
       } else if (ev.type === 'replay') {
         // 历史重放（初始化/读档/新游戏）：整批替换
         const msgs = ev.messages || []
@@ -233,12 +252,16 @@ export default function App() {
           return prev
         })
         showToast(ev.message)
+      } else if (ev.type === 'approval') {
+        // 越界审批自动裁决结果（技能硬调控）：toast 提示，便于用户感知
+        const label = ev.decision === 'deny' ? '已拒绝' : '已放行'
+        showToast(`越界操作「${ev.toolName || '未知'}」${label}`)
       }
     })
     return off
   }, [showToast])
 
-  // ---- 初始化：连接 dsh + 恢复会话 ----
+  // ---- 初始化：连接 dsh + 迁移旧存档 ----
   useEffect(() => {
     bridge.init()
   }, [])
@@ -294,17 +317,28 @@ export default function App() {
     }
   }, [typing, streamingText, pageIndex, shownIndex, messages.length])
 
-  // ---- 全局 Enter / 空格：对话框停留时推进（玩家回合 / 设置面板打开时不拦截）----
+  // ---- 全局 Enter / 空格：对话框停留时推进（玩家回合 / 设置面板 / ESC 面板打开时不拦截）----
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return
-      if (isPlayerTurnRef.current || settingsOpen) return
+      if (isPlayerTurnRef.current || settingsOpen || escOpen || pageRef.current !== 'dialog') return
       e.preventDefault()
       handleDialogClick()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [handleDialogClick, settingsOpen])
+  }, [handleDialogClick, settingsOpen, escOpen])
+
+  // ---- ESC：对话页内打开/关闭角色面板 ----
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== 'Escape') return
+      if (pageRef.current !== 'dialog') return
+      setEscOpen((v) => !v)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // ---- 玩家回合：没有流式、尾部已展示完、当前页已确认、且该轮到玩家说话 ----
   const isPlayerTurn =
@@ -320,32 +354,6 @@ export default function App() {
     isPlayerTurnRef.current = isPlayerTurn
   }, [isPlayerTurn])
 
-  // ---- 存档 / 读档 / 新游戏 ----
-  const handleSave = useCallback(() => {
-    if (bridge.saveSession()) {
-      setSavedAt(Date.now())
-      showToast('已存档')
-    } else {
-      showToast('存档失败')
-    }
-  }, [showToast])
-
-  const handleLoad = useCallback(async () => {
-    if (await bridge.loadSession()) {
-      setSavedAt(null)
-      showToast('读档完成')
-    } else {
-      showToast('没有找到存档')
-    }
-  }, [showToast])
-
-  const handleNewGame = useCallback(async () => {
-    if (await bridge.newGame()) {
-      setSavedAt(null)
-      showToast('新的故事开始了')
-    }
-  }, [showToast])
-
   const handleSend = useCallback((text) => {
     bridge.sendMessage(text)
   }, [])
@@ -355,7 +363,94 @@ export default function App() {
     setSettingsState(setSettings(partial))
   }, [])
 
-  // 展示文本：执行技能时显示演出旁白；流式/正常时都按当前页显示（分页打字，无全文闪现）
+  // ---- 页面导航 ----
+  const goMain = useCallback(() => {
+    setEscOpen(false)
+    setPage('main')
+  }, [])
+
+  const goSelect = useCallback((mode) => {
+    setSelectMode(mode)
+    setPage('select')
+  }, [])
+
+  // 「继续」：上下文存在且有效 → 直接回到最近故事+存档；否则回退到选择界面
+  const goContinue = useCallback(async () => {
+    let story = null
+    let save = null
+    const ctx = stories.getContext()
+    if (ctx?.storyId) {
+      story = stories.getStory(ctx.storyId)
+      save = ctx.saveId ? stories.getSave(ctx.storyId, ctx.saveId) : null
+    }
+    if (!story) story = stories.lastStory()
+    if (story && !save) save = stories.lastSave(story.id)
+    if (!story) {
+      setSelectMode('new')
+      setPage('select')
+      return
+    }
+    const res = await bridge.enterStory(story.id, save?.id || null)
+    if (res.ok) {
+      setPage('dialog')
+    } else {
+      showToast(res.error || '进入故事失败')
+    }
+  }, [showToast])
+
+  // 选择界面：载入存档
+  const handlePickSave = useCallback(async (storyId, saveId) => {
+    const res = await bridge.enterStory(storyId, saveId)
+    if (res.ok) {
+      setPage('dialog')
+    } else {
+      showToast(res.error || '载入失败')
+    }
+  }, [showToast])
+
+  // 选择界面：新建存档（新游戏）
+  const handleNewSave = useCallback(async (storyId, saveName) => {
+    const res = await bridge.newSave(storyId, saveName)
+    if (res.ok) {
+      setSavedAt(Date.now())
+      setPage('dialog')
+    } else {
+      showToast(res.error || '新建失败')
+    }
+  }, [showToast])
+
+  // ESC 面板：保存（覆盖当前存档）
+  const handlePanelSave = useCallback(() => {
+    const ctx = stories.getContext()
+    const save = ctx?.saveId ? stories.getSave(ctx.storyId, ctx.saveId) : null
+    bridge.saveNow(save?.name || '对话').then((res) => {
+      if (res.ok) {
+        setSavedAt(Date.now())
+        showToast('已存档')
+      } else {
+        showToast(res.error || '存档失败')
+      }
+    })
+  }, [showToast])
+
+  // ESC 面板：技能开关
+  const handleToggleSkill = useCallback((id, on) => {
+    setSkillState(skills.setSkillState(id, on))
+  }, [])
+
+  // ESC 面板打开时刷新模型信息
+  useEffect(() => {
+    if (!escOpen) return
+    let alive = true
+    getModelInfo().then((info) => {
+      if (alive) setModelInfo(info)
+    })
+    return () => {
+      alive = false
+    }
+  }, [escOpen])
+
+  // ---- 展示文本：执行技能时显示演出旁白；流式/正常时都按当前页显示（分页打字，无全文闪现）----
   const displayText =
     status === 'action'
       ? `（言叶正在施展技能「${actionDetail}」……）`
@@ -370,13 +465,63 @@ export default function App() {
         ? current.name
         : '言叶'
 
+  // ---- 主界面 / 选择界面 ----
+  if (page === 'main') {
+    const ctx = stories.getContext()
+    const last = ctx?.storyId ? stories.getStory(ctx.storyId) : null
+    return (
+      <div className="stage">
+        <Background src={`/assets/${settings.scene}.png`} />
+        {settings.showCharacter !== false && (
+          <CharacterSprite src="/assets/character.png" name="言叶" />
+        )}
+        <MainMenu
+          onNewGame={() => goSelect('new')}
+          onLoad={() => goSelect('load')}
+          onContinue={goContinue}
+          canContinue={!!(last && lastSaveInfo(last))}
+          lastStoryName={last?.name || ''}
+          lastSaveName={last ? lastSaveInfo(last) : ''}
+          onSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsPanel
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          settings={settings}
+          onChange={handleSettingsChange}
+        />
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    )
+  }
+
+  if (page === 'select') {
+    return (
+      <div className="stage">
+        <Background src={`/assets/${settings.scene}.png`} />
+        <SelectScreen
+          mode={selectMode}
+          onPickSave={handlePickSave}
+          onNewSave={handleNewSave}
+          onBack={goMain}
+        />
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    )
+  }
+
+  // ---- 对话界面 ----
   return (
     <div className="stage">
       <Background src={`/assets/${settings.scene}.png`} />
       {settings.showCharacter !== false && (
         <CharacterSprite src="/assets/character.png" name="言叶" />
       )}
-      <TopBar scene={SCENE_LABELS[settings.scene] || settings.scene} savedAt={savedAt} />
+      <TopBar
+        scene={SCENE_LABELS[settings.scene] || settings.scene}
+        savedAt={savedAt}
+        onBack={goMain}
+      />
 
       <ChoiceList choices={DUMMY_CHOICES} onPick={() => {}} visible={false} />
 
@@ -399,9 +544,7 @@ export default function App() {
 
       <InputBar
         disabled={status !== 'ready'}
-        onNewGame={handleNewGame}
-        onSave={handleSave}
-        onLoad={handleLoad}
+        onMenu={goMain}
         onSettings={() => setSettingsOpen(true)}
       />
 
@@ -412,7 +555,34 @@ export default function App() {
         onChange={handleSettingsChange}
       />
 
+      <EscapePanel
+        open={escOpen}
+        onClose={() => setEscOpen(false)}
+        context={{
+          storyName: stories.getContext()?.storyId ? stories.getStory(stories.getContext().storyId)?.name : null,
+          saveName: (() => {
+            const ctx = stories.getContext()
+            if (!ctx?.storyId || !ctx?.saveId) return null
+            return stories.getSave(ctx.storyId, ctx.saveId)?.name || null
+          })(),
+          sessionId: window.__bridgeDebug?.state?.sessionId || null,
+        }}
+        modelInfo={modelInfo}
+        skills={skillState}
+        skillCatalog={skills.getSkillCatalog()}
+        onToggleSkill={handleToggleSkill}
+        messageCount={messages.length}
+        onSave={handlePanelSave}
+        onBackToMenu={goMain}
+      />
+
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
+}
+
+// 「继续」入口是否可用 + 最近存档名
+function lastSaveInfo(story) {
+  const save = stories.lastSave(story.id)
+  return save ? save.name : null
 }
