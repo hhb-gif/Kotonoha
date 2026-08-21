@@ -306,8 +306,8 @@ export async function enterStory(storyId, saveId) {
     const save = stories.getSave(storyId, saveId)
     if (save?.sessionId) {
       try {
-        await api('session.history', { sessionId: save.sessionId })
-        sessionId = save.sessionId
+        const h = await api('session.history', { sessionId: save.sessionId })
+        if (h?.ok) sessionId = save.sessionId
       } catch {
         // 会话已失效 → 新建
       }
