@@ -1,28 +1,35 @@
 // ============================================================
-// registry.ts —— 工具注册表：buildDefaultTools / ToolRegistry
+// registry.ts —— 工具注册表：ToolRegistry + buildDefaultTools
 // 契约：types.ts Tool
 // ============================================================
 
 import type { Tool } from '../types'
 
-import { readFileTool, writeFileTool } from './file'
-import { runCommandTool } from './terminal'
-import { gitCommitTool, gitLogTool, gitStatusTool } from './git'
-import { fetchUrlTool, webSearchTool } from './web'
-import { executeSkillTool } from './skills'
+export type { Tool } from '../types'
 
-// M0 九个工具：文件 2 + 终端 1 + git 3 + 网页 2 + 技能 1
+import { readFileTool, writeFileTool } from './file'
+import { editFileTool } from './file-edit'
+import { globTool } from './glob'
+import { grepTool } from './grep'
+import { taskTool } from './task'
+import { bashTool } from './bash'
+
+// 保留原有工具导出（供其它模块按需引用）
+export { runCommandTool } from './terminal'
+export { gitStatusTool, gitCommitTool, gitLogTool } from './git'
+export { fetchUrlTool, webSearchTool } from './web'
+export { executeSkillTool } from './skills'
+
+// 7 核心工具：read_file, write_file, edit_file, glob, grep, task, bash
 export function buildDefaultTools(): Tool[] {
   return [
     readFileTool,
     writeFileTool,
-    runCommandTool,
-    gitStatusTool,
-    gitCommitTool,
-    gitLogTool,
-    fetchUrlTool,
-    webSearchTool,
-    executeSkillTool,
+    editFileTool,
+    globTool,
+    grepTool,
+    taskTool,
+    bashTool,
   ]
 }
 

@@ -120,11 +120,26 @@ export interface StreamParams {
   signal?: AbortSignal
 }
 
+export type ProviderCapability = 'chat' | 'reasoning' | 'tool-calls' | 'image' | 'video'
+
 export interface ModelProvider {
   id: string
   name: string
+  capabilities: ProviderCapability[]
   listModels(): Promise<{ id: string; name?: string }[]>
   streamChat(p: StreamParams): AsyncGenerator<ProviderChunk>
+  estimateCost(promptTokens: number, completionTokens: number): number
+  healthCheck(): Promise<boolean>
+}
+
+export interface ProviderRegistry {
+  get(id: string): ModelProvider | undefined
+  list(): ModelProvider[]
+  defaultId(): string
+  register(provider: ModelProvider): void
+  unregister(id: string): void
+  setFallbackChain(chain: string[]): void
+  getFallbackChain(): string[]
 }
 
 // ---- Tool（工具）----
@@ -168,15 +183,19 @@ export interface Db {
   createSession(rec: SessionRecord): void
   getSession(id: string): SessionRecord | null
   listSessions(): SessionRecord[]
+  listAllSessions(includeArchived?: boolean): SessionRecord[]
   updateSession(id: string, patch: Partial<SessionRecord>): void
   deleteSession(id: string): void
   // 事件
   appendEvent(sessionId: string, ev: HistoryEvent): void
   readEvents(sessionId: string): HistoryEvent[]
+  deleteEvents(sessionId: string): void
   // 设置
   getSetting(key: string): string | null
   setSetting(key: string, value: string): void
   close(): void
+  // 底层数据库实例（高级用法）
+  _db: any
 }
 
 export interface SecretsStore {

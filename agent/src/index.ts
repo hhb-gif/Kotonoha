@@ -362,7 +362,7 @@ function loadDeps(hub: EventHub): {
   secrets: SecretsStore
 } {
   try {
-    // 并行 agent 交付的真实组装（store/providers/tools/auth/core）
+    // 并行 agent 交付的真实组装（store/providers/tools/auth/core/memory/mcp）
     // require 返回 any，缺失模块不会造成类型错误
     const dataDir =
       process.env.KOTONOHA_DATA_DIR || path.join(__dirname, '..', 'data')
@@ -370,8 +370,13 @@ function loadDeps(hub: EventHub): {
     const { openSecrets } = require('./store/secrets') as {
       openSecrets: (dir: string) => SecretsStore
     }
-    const { Approver } = require('./auth/approver') as {
-      Approver: new (opts: { broadcast: (frame: OutboundFrame) => void }) => RpcHandlerContext['approver']
+    const { buildDefaultAuth } = require('./auth') as {
+      buildDefaultAuth: (secrets: SecretsStore, broadcast: (frame: OutboundFrame) => void) => {
+        engine: import('./auth/types').AuthEngine
+        permissionEngine: import('./auth/permission').PermissionEngine
+        rulesManager: import('./auth/rules').RulesManager
+        defaultRules: readonly import('./auth/types').PermissionRule[]
+      }
     }
     const { createEngine } = require('./core/engine') as {
       createEngine: (deps: unknown, opts: { dataDir: string }) => SessionEngine
@@ -384,17 +389,24 @@ function loadDeps(hub: EventHub): {
       }
     }
     const { buildDefaultTools } = require('./tools/registry') as {
-      buildDefaultTools: () => { def: { name: string } }[]
+      buildDefaultTools: () => import('./tools').Tool[]
     }
     const { buildSystemPrompt } = require('./core/context') as {
       buildSystemPrompt: (session: SessionRecord) => string
     }
+    const { buildDefaultStore } = require('./store') as {
+      buildDefaultStore: (dir: string, envSecret?: string) => import('./store').SessionStore
+    }
+    const { buildDefaultMemory } = require('./memory') as {
+      buildDefaultMemory: (deps: { db: import('./store').Db; providers: import('./providers').ProviderRegistry; tools: import('./types').Tool[] }) => import('./memory').MemoryEngine
+    }
 
-    const db = openDb(dataDir)
+    const db = openDb(dataDir) as import('./store').Db
     const secrets = openSecrets(dataDir)
-    const approver = new Approver({ broadcast: (frame) => hub.broadcast(frame) })
-    const providers = buildDefaultRegistry((ref) => secrets.get(ref))
-    const tools = buildDefaultTools()
+    const store = buildDefaultStore(dataDir)
+    const auth = buildDefaultAuth(secrets, (frame) => hub.broadcast(frame))
+    const providers = buildDefaultRegistry((ref) => secrets.get(ref)) as import('./providers').ProviderRegistry
+    const tools = buildDefaultTools() as import('./types').Tool[]
 
     const engine = createEngine(
       {
@@ -408,14 +420,14 @@ function loadDeps(hub: EventHub): {
           list: () => tools,
           get: (name: string) => tools.find((t) => t.def.name === name),
         },
-        approver,
+        approver: auth.engine,
         secrets,
         broadcast: (frame: OutboundFrame) => hub.broadcast(frame),
         systemPrompt: buildSystemPrompt,
       },
       { dataDir }
     )
-    return { engine, approver, secrets }
+    return { engine, approver: auth.engine, secrets }
   } catch (e) {
     console.warn('[agent] 后端模块未就绪，以内存 stub 运行（骨架模式）:', (e as Error).message)
     return stubDeps()
