@@ -5,7 +5,8 @@
 // 中文注释、英文标识符
 // ============================================================
 
-import type { ModelProvider, ProviderChunk, StreamParams } from '../types'
+import type { ModelProvider, ProviderChunk, StreamParams, ProviderCapability } from '../types'
+import { estimateCost } from './cost'
 
 // ---- 适配器 ----
 
@@ -16,15 +17,17 @@ export interface OpenAICompatOptions {
   apiKeyRef: string
   models: { id: string; name?: string }[]
   getKey: (ref: string) => string | undefined
+  capabilities?: ProviderCapability[]  // 默认 ['chat', 'tool-calls']
 }
 
 export class OpenAICompatProvider implements ModelProvider {
   readonly id: string
   readonly name: string
+  readonly capabilities: ProviderCapability[]
   private readonly baseURL: string
   private readonly apiKeyRef: string
   private readonly models: { id: string; name?: string }[]
-  private readonly getKey: (ref: string) => string | undefined
+  protected readonly getKey: (ref: string) => string | undefined
 
   constructor(opts: OpenAICompatOptions) {
     this.id = opts.id
@@ -33,6 +36,7 @@ export class OpenAICompatProvider implements ModelProvider {
     this.apiKeyRef = opts.apiKeyRef
     this.models = opts.models
     this.getKey = opts.getKey
+    this.capabilities = opts.capabilities ?? ['chat', 'tool-calls']
   }
 
   async listModels(): Promise<{ id: string; name?: string }[]> {
@@ -49,6 +53,37 @@ export class OpenAICompatProvider implements ModelProvider {
     for await (const chunk of streamSSE(resp, { signal: p.signal })) {
       yield chunk
     }
+  }
+
+  /** 健康检查：验证 API Key 配置且端点可达 */
+  async healthCheck(): Promise<boolean> {
+    const key = this.getKey(this.apiKeyRef)
+    if (!key) return false
+    try {
+      const resp = await fetch(this.baseURL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: this.models[0]?.id ?? 'test',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(5000),
+      })
+      return resp.status !== 401
+    } catch {
+      return false
+    }
+  }
+
+  /** 成本估算：按模型定价表计算 */
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    // 使用第一个模型作为定价参考（实际应按 modelId 查表）
+    const modelId = this.models[0]?.id ?? ''
+    return estimateCost(this.id, modelId, promptTokens, completionTokens)
   }
 }
 

@@ -9,6 +9,8 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import type { Db, HistoryEvent, SessionRecord } from '../types'
 
+export type { Db }
+
 // 行映射：SQLite 下划线列名 → SessionRecord 驼峰字段
 interface SessionRow {
   id: string
@@ -18,6 +20,7 @@ interface SessionRow {
   model: string
   created_at: number
   last_active_at: number
+  archived_at: number
 }
 
 function toSessionRecord(row: SessionRow): SessionRecord {
@@ -33,7 +36,7 @@ function toSessionRecord(row: SessionRow): SessionRecord {
 }
 
 const SESSION_COLUMNS =
-  'id, cwd, label, provider, model, created_at, last_active_at'
+  'id, cwd, label, provider, model, created_at, last_active_at, archived_at'
 
 export function openDb(dir: string): Db {
   // 目录不存在则创建
@@ -50,7 +53,8 @@ export function openDb(dir: string): Db {
       provider TEXT NOT NULL DEFAULT 'deepseek-official',
       model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
       created_at INTEGER NOT NULL,
-      last_active_at INTEGER NOT NULL
+      last_active_at INTEGER NOT NULL,
+      archived_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +69,13 @@ export function openDb(dir: string): Db {
     );
   `)
 
+  // 迁移：为旧表添加 archived_at 列
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`)
+  } catch {
+    // 列已存在，忽略
+  }
+
   // ---- prepared statements ----
   const insertSession = db.prepare(
     `INSERT INTO sessions (id, cwd, label, provider, model, created_at, last_active_at)
@@ -74,7 +85,7 @@ export function openDb(dir: string): Db {
     `SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`
   )
   const selectAllSessions = db.prepare(
-    `SELECT ${SESSION_COLUMNS} FROM sessions ORDER BY last_active_at DESC`
+    `SELECT ${SESSION_COLUMNS} FROM sessions WHERE archived_at = 0 ORDER BY last_active_at DESC`
   )
   const insertEvent = db.prepare(
     `INSERT INTO events (session_id, seq, payload) VALUES (?, ?, ?)`
@@ -135,6 +146,16 @@ export function openDb(dir: string): Db {
       return (selectAllSessions.all() as SessionRow[]).map(toSessionRecord)
     },
 
+    listAllSessions(includeArchived = false): SessionRecord[] {
+      if (includeArchived) {
+        const stmt = db.prepare(
+          `SELECT ${SESSION_COLUMNS} FROM sessions ORDER BY last_active_at DESC`
+        )
+        return (stmt.all() as SessionRow[]).map(toSessionRecord)
+      }
+      return (selectAllSessions.all() as SessionRow[]).map(toSessionRecord)
+    },
+
     updateSession(id: string, patch: Partial<SessionRecord>): void {
       const sets: string[] = []
       const params: Record<string, unknown> = { id, lastActiveAt: Date.now() }
@@ -162,6 +183,10 @@ export function openDb(dir: string): Db {
       return rows.map((r) => JSON.parse(r.payload) as HistoryEvent)
     },
 
+    deleteEvents(sessionId: string): void {
+      deleteEvents.run(sessionId)
+    },
+
     getSetting(key: string): string | null {
       const row = selectSetting.get(key) as { value: string } | undefined
       return row ? (JSON.parse(row.value) as string) : null
@@ -174,5 +199,8 @@ export function openDb(dir: string): Db {
     close(): void {
       db.close()
     },
+
+    // 暴露底层数据库实例（供 archive.ts 等高级用法使用）
+    _db: db,
   }
 }

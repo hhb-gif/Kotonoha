@@ -5,7 +5,10 @@
 // ============================================================
 
 import { randomUUID } from 'node:crypto'
-import type { ChatMessage, Db, HistoryEvent, SessionRecord } from '../types'
+import type { ChatMessage, Db, HistoryEvent, SessionRecord, ModelProvider } from '../types'
+import { exportSessionJson, importSessionJson, exportSessionMarkdown, importSessionMarkdown } from './export'
+import { compressSession, type CompressOpts } from './compress'
+import { archiveSession, unarchiveSession, listArchivedSessions, isArchived } from './archive'
 
 export const DEFAULT_PROVIDER = 'deepseek-official'
 export const DEFAULT_MODEL = 'deepseek-v4-flash'
@@ -62,4 +65,57 @@ function toChatMessage(ev: HistoryEvent): ChatMessage {
 
 export function historyToChatMessages(db: Db, sessionId: string): ChatMessage[] {
   return db.readEvents(sessionId).map(toChatMessage)
+}
+
+// ---- 新增：导出/导入 ----
+
+export async function exportSession(
+  db: Db,
+  sessionId: string,
+  format: 'json' | 'markdown'
+): Promise<string> {
+  if (format === 'json') {
+    return exportSessionJson(db, sessionId)
+  }
+  return exportSessionMarkdown(db, sessionId)
+}
+
+export async function importSession(
+  db: Db,
+  data: string,
+  format: 'json' | 'markdown'
+): Promise<SessionRecord> {
+  if (format === 'json') {
+    return importSessionJson(db, data)
+  }
+  return importSessionMarkdown(db, data)
+}
+
+// ---- 新增：压缩 ----
+
+export async function compressSessionStore(
+  db: Db,
+  sessionId: string,
+  opts: CompressOpts,
+  provider: ModelProvider
+): Promise<{ originalEvents: number; compressedEvents: number; summary: string }> {
+  return compressSession(db, sessionId, opts, provider)
+}
+
+// ---- 新增：归档/解归档 ----
+
+export async function archiveSessionStore(db: Db, sessionId: string): Promise<void> {
+  return archiveSession(db, sessionId)
+}
+
+export async function unarchiveSessionStore(db: Db, sessionId: string): Promise<void> {
+  return unarchiveSession(db, sessionId)
+}
+
+export function listArchivedSessionsStore(db: Db): SessionRecord[] {
+  return listArchivedSessions(db)
+}
+
+export function isSessionArchived(db: Db, sessionId: string): boolean {
+  return isArchived(db, sessionId)
 }
