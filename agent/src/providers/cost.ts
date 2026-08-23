@@ -9,11 +9,12 @@ export interface ModelPricing {
   completion: number  // USD per 1k completion tokens
 }
 
-// 定价表：providerId:modelId -> pricing
+// 定价表：providerId:modelId -> pricing（USD per 1k tokens；取峰值价，保守估算）
 export const PRICING_TABLE: Record<string, ModelPricing> = {
-  // DeepSeek 官方 (https://api-docs.deepseek.com/pricing)
-  'deepseek-official:deepseek-chat':     { prompt: 0.00014, completion: 0.00028 },
-  'deepseek-official:deepseek-reasoner': { prompt: 0.00055, completion: 0.00219 },
+  // DeepSeek 官方 V4 (https://api-docs.deepseek.com/quick_start/pricing，2026-08 峰值)
+  'deepseek-official:deepseek-v4-flash':          { prompt: 0.00044, completion: 0.00132 },
+  'deepseek-official:deepseek-v4-pro':            { prompt: 0.00132, completion: 0.00396 },
+  'deepseek-official:deepseek-v4-flash-vision-exp': { prompt: 0.00044, completion: 0.00132 },
 
   // Agnes AI (图像/视频生成，按次计费而非 token，此处仅占位)
   'agnes:agnes-image-2.1-flash': { prompt: 0, completion: 0 },

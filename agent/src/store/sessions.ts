@@ -11,7 +11,7 @@ import { compressSession, type CompressOpts } from './compress'
 import { archiveSession, unarchiveSession, listArchivedSessions, isArchived } from './archive'
 
 export const DEFAULT_PROVIDER = 'deepseek-official'
-export const DEFAULT_MODEL = 'deepseek-chat'
+export const DEFAULT_MODEL = 'deepseek-v4-flash'
 export const DEFAULT_LABEL = '对话'
 
 export function createSessionRecord(cwd: string): SessionRecord {

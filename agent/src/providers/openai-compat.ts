@@ -104,10 +104,23 @@ export function buildChatBody(p: StreamParams): Record<string, unknown> {
           function: { name: tc.name, arguments: tc.args },
         }))
       }
+      // DeepSeek thinking 模式：带 tools 参数时必须回传 reasoning_content，否则 400
+      if (m.role === 'assistant' && m.reasoningContent) {
+        msg.reasoning_content = m.reasoningContent
+      }
       return msg
     }),
     stream: true,
     max_tokens: 4096,
+  }
+  // thinking 模式开关（DeepSeek V4；其它 OpenAI 兼容端点忽略此参数）
+  if (p.thinking) {
+    if (p.thinking.enabled === false) {
+      body.thinking = { type: 'disabled' }
+    } else {
+      body.thinking = { type: 'enabled' }
+      if (p.thinking.effort) body.reasoning_effort = p.thinking.effort
+    }
   }
   // 有 tools 才传；仅含 role==='tool' 历史消息的请求不传 tools 也合法
   if (p.tools && p.tools.length > 0) {

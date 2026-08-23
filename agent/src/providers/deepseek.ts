@@ -1,5 +1,5 @@
 // ============================================================
-// deepseek.ts —— DeepSeek 官方供应商（OpenAI 兼容 + function calling）
+// deepseek.ts —— DeepSeek 官方供应商（OpenAI 兼容 + function calling + thinking）
 // baseURL: https://api.deepseek.com/chat/completions
 // 复用 openai-compat.ts 的 requestChatStream / streamSSE。
 // 中文注释、英文标识符
@@ -11,6 +11,13 @@ import { estimateCost } from './cost'
 
 const BASE_URL = 'https://api.deepseek.com/chat/completions'
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
+
+// 官方模型清单（2026-08）：deepseek-chat/reasoner 已弃用（2026-07-24），当前为 V4 系列
+const MODELS = [
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash（推荐，快速低成本）' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro（旗舰，更强推理）' },
+  { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek V4 Flash Vision（多模态实验）' },
+]
 
 export interface DeepSeekOptions {
   // 由集成方注入：读 secrets 的 DEEPSEEK_API_KEY
@@ -27,9 +34,9 @@ export class DeepSeekProvider implements ModelProvider {
     this.getKey = opts.getKey
   }
 
-  // 固定列表，不调 API
+  // 固定列表，不调 API（官方 /models 端点需登录态，直接维护清单）
   async listModels(): Promise<{ id: string; name?: string }[]> {
-    return [{ id: 'deepseek-chat', name: 'DeepSeek V3 (Chat)' }, { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Reasoning)' }]
+    return MODELS
   }
 
   async *streamChat(p: StreamParams): AsyncGenerator<ProviderChunk> {
@@ -56,7 +63,7 @@ export class DeepSeekProvider implements ModelProvider {
           Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
           messages: [{ role: 'user', content: 'ping' }],
           max_tokens: 1,
         }),
@@ -68,9 +75,8 @@ export class DeepSeekProvider implements ModelProvider {
     }
   }
 
-  /** 成本估算：按 DeepSeek 官方定价计算 */
+  /** 成本估算：按当前默认模型（V4 Flash）定价计算 */
   estimateCost(promptTokens: number, completionTokens: number): number {
-    // 使用当前模型作为定价参考
-    return estimateCost(this.id, 'deepseek-chat', promptTokens, completionTokens)
+    return estimateCost(this.id, 'deepseek-v4-flash', promptTokens, completionTokens)
   }
 }

@@ -67,6 +67,7 @@ export class TurnRunner {
       // 2. 可迭代多轮：模型可能在文本之后请求工具
       for (;;) {
         let roundText = ''
+        let roundReasoning = ''
         const calls: PendingCall[] = []
         let done = false
 
@@ -74,6 +75,7 @@ export class TurnRunner {
           model: session.model,
           messages,
           tools: toolDefs,
+          thinking: { enabled: true, effort: 'medium' },
         })) {
           switch (chunk.kind) {
             case 'text':
@@ -82,6 +84,7 @@ export class TurnRunner {
               this.emitChunk({ type: 'text-delta', text: chunk.text })
               break
             case 'reasoning':
+              roundReasoning += chunk.text
               this.emitChunk({ type: 'reasoning-delta' })
               break
             case 'tool-call':
@@ -101,12 +104,13 @@ export class TurnRunner {
         // 本轮无工具调用 → 结束循环
         if (calls.length === 0) break
 
-        // 本轮有文本或工具调用 → 追加 assistant 消息（含 tool_calls）进上下文
+        // 本轮有文本或工具调用 → 追加 assistant 消息（含 tool_calls + reasoning_content，thinking 模式必需回传）
         if (roundText || calls.length > 0) {
           messages.push({
             role: 'assistant',
             content: roundText,
             toolCalls: calls.map((c) => ({ id: c.id, name: c.name, args: c.args })),
+            reasoningContent: roundReasoning,
           })
         }
 

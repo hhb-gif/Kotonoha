@@ -105,6 +105,8 @@ export interface ChatMessage {
   content: string
   toolCallId?: string
   toolCalls?: { id: string; name: string; args: string }[]
+  // DeepSeek thinking 模式：带 tools 参数时必须原样回传 reasoning_content，否则 API 400
+  reasoningContent?: string
 }
 
 export interface ToolDef {
@@ -118,6 +120,8 @@ export interface StreamParams {
   messages: ChatMessage[]
   tools?: ToolDef[]
   signal?: AbortSignal
+  // 可选：thinking 模式开关与强度（DeepSeek V4：thinking.type enabled/disabled + reasoning_effort low/medium/high/xhigh/max）
+  thinking?: { enabled?: boolean; effort?: string }
 }
 
 export type ProviderCapability = 'chat' | 'reasoning' | 'tool-calls' | 'image' | 'video'
