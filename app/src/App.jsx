@@ -111,6 +111,9 @@ export default function App() {
       return true
     }
   })
+  // 引导「去设置」后关闭设置 → 递增信号，让引导自动前进到下一步
+  const [onbAdvance, setOnbAdvance] = useState(0)
+  const onbWentSettingsRef = useRef(false)
   // 越界审批弹窗（待用户选择：允许一次 / 始终允许 / 拒绝）
   const [approval, setApproval] = useState(null) // { rpcId, sessionId, approvalId, toolName, reason }
 
@@ -418,10 +421,19 @@ export default function App() {
     setOnboardingOpen(false)
   }, [])
 
-  // 引导「去设置」：打开设置面板（不完成引导；关闭设置后引导继续第 3 步）
+  // 引导「去设置」：打开设置面板（不完成引导；关闭设置后引导自动前进到下一步）
   const handleOnboardGoSettings = useCallback(() => {
+    onbWentSettingsRef.current = true
     setSettingsOpen(true)
   }, [])
+
+  // 设置面板关闭时：若引导曾去设置，自动前进引导到下一步（第 2 步配置完成）
+  useEffect(() => {
+    if (!settingsOpen && onbWentSettingsRef.current && onboardingOpen) {
+      onbWentSettingsRef.current = false
+      setOnbAdvance((t) => t + 1)
+    }
+  }, [settingsOpen, onboardingOpen])
 
   // ---- 页面导航 ----
   const goMain = useCallback(() => {
@@ -634,6 +646,7 @@ export default function App() {
         <Onboarding
           open={onboardingOpen}
           hidden={settingsOpen}
+          advanceSignal={onbAdvance}
           onFinish={finishOnboarding}
           onGoSettings={handleOnboardGoSettings}
         />

@@ -2,6 +2,7 @@
 // props:
 //   open          是否显示（由父组件按 localStorage 标记控制）
 //   hidden        设置面板打开时临时隐藏（保留内部步骤进度，关闭后继续）
+//   advanceSignal 递增时前进一步（父组件在「去设置→关闭设置」后触发，跳过 action 步）
 //   onFinish      完成/跳过（父组件负责写 kotonoha:onboarding-done 并关闭）
 //   onGoSettings  引导「去设置」按钮（父组件负责打开设置面板）
 import { useEffect, useState } from 'react'
@@ -30,13 +31,20 @@ const STEPS = [
   },
 ]
 
-export default function Onboarding({ open = false, hidden = false, onFinish, onGoSettings }) {
+export default function Onboarding({ open = false, hidden = false, advanceSignal = 0, onFinish, onGoSettings }) {
   const [step, setStep] = useState(0)
 
   // 再次打开时重置到第一步（正常情况下只会出现一次；hidden 不触发重置）
   useEffect(() => {
     if (open) setStep(0)
   }, [open])
+
+  // 设置面板关闭后：自动前进（第 2 步「配置模型」经设置完成后跳到下一步）
+  useEffect(() => {
+    if (advanceSignal > 0 && open) {
+      setStep((s) => Math.min(s + 1, STEPS.length - 1))
+    }
+  }, [advanceSignal, open])
 
   if (!open) return null
 
