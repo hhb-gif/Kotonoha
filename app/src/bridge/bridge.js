@@ -50,6 +50,7 @@ const state = {
   degraded: false,      // 是否已降级模型
   pendingText: '',      // 当前 turn 的文本累积
   pendingPrompt: null,  // 当前 turn 的用户消息（429 降级后重试用）
+  turnWatchdog: null,   // 发送后等待 turn/start 的超时器（防界面停留）
   pendingApproval: null, // 待用户裁决的越界审批（{ rpcId, sessionId, approvalId, callId, toolName, reason, timer }）
 }
 
@@ -102,7 +103,17 @@ function connectWS() {
   }
   const ws = new WebSocket(`${WS_BASE}/api/events.mux`)
   state.ws = ws
-  ws.onopen = () => { console.log('[bridge] ws open'); emit({ type: 'status', state: 'ready' }) }
+  ws.onopen = () => {
+    console.log('[bridge] ws open')
+    // 重连成功后：若此前 busy 卡住（未收到 turn/end 就断线），复位避免后续消息被吞
+    if (state.busy) {
+      state.busy = false
+      state.pendingText = ''
+      state.pendingPrompt = null
+      console.warn('[bridge] WS 重连，复位卡住的 busy 状态')
+    }
+    emit({ type: 'status', state: 'ready' })
+  }
   ws.onmessage = (e) => {
     let frame
     try {
@@ -222,6 +233,10 @@ function handleSessionEvent(ev) {
   console.log('[bridge] ws event →', ev.type)
   switch (ev.type) {
     case 'turn/start':
+      if (state.turnWatchdog) {
+        clearTimeout(state.turnWatchdog)
+        state.turnWatchdog = null
+      }
       state.busy = true
       state.pendingText = ''
       emit({ type: 'status', state: 'thinking' })
@@ -245,6 +260,10 @@ function handleSessionEvent(ev) {
     }
 
     case 'turn/end':
+      if (state.turnWatchdog) {
+        clearTimeout(state.turnWatchdog)
+        state.turnWatchdog = null
+      }
       state.busy = false
       state.pendingText = ''
       state.pendingPrompt = null
@@ -267,6 +286,10 @@ async function handleFinish(reason) {
 }
 
 async function handleTurnError(reason) {
+  if (state.turnWatchdog) {
+    clearTimeout(state.turnWatchdog)
+    state.turnWatchdog = null
+  }
   const message = reason.message || reason.kind || '模型调用出错'
   const isRateLimit = /rate limit|429|limit/i.test(message)
 
@@ -429,6 +452,18 @@ export async function sendMessage(text) {
       mode: 'queue',
       content,
     })
+    // 看门狗：prompt 已接受但 12s 内未收到 turn/start（WS 断连/后端挂起），复位 busy 并提示，
+    // 避免界面永久停留在输入画面。收到 turn/start 后由 handleSessionEvent 清除。
+    state.turnWatchdog = setTimeout(() => {
+      if (state.busy) {
+        state.busy = false
+        state.pendingText = ''
+        state.pendingPrompt = null
+        console.warn('[bridge] 发送后未收到 turn/start，复位 busy')
+        emit({ type: 'error', message: '对话无响应，请重试' })
+        emit({ type: 'status', state: 'ready' })
+      }
+    }, 12000)
   } catch (err) {
     emit({ type: 'error', message: `发送失败：${err.message}` })
     state.busy = false

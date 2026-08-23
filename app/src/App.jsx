@@ -388,6 +388,8 @@ export default function App() {
   }, [])
 
   // ---- 玩家回合：没有流式、尾部已展示完、当前页已确认、且该轮到玩家说话 ----
+  // status==='ready' 已保证无正在进行的 turn；最后一条是 user 或 model 都允许输入
+  // （出错/无回复时最后是 user，也应能重试，否则界面会卡住）
   const isPlayerTurn =
     status === 'ready' &&
     !streamingText &&
@@ -395,7 +397,7 @@ export default function App() {
     !pageDone &&
     pageIndex >= pages.length - 1 &&
     shownIndex >= messages.length - 1 &&
-    (messages.length === 0 || messages[messages.length - 1].role === 'model')
+    (messages.length === 0 || ['model', 'user'].includes(messages[messages.length - 1].role))
   const isPlayerTurnRef = useRef(isPlayerTurn)
   useEffect(() => {
     isPlayerTurnRef.current = isPlayerTurn
