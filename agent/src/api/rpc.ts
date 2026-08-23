@@ -174,6 +174,31 @@ const routes: Record<string, Route> = {
     return { tools: ctx.ops.listTools() }
   },
 
+  // ---- T1-toolsets（工具集门类：list / active / set）----
+
+  'toolsets.list': (ctx) => {
+    if (!ctx.ops?.listToolsets) throw new Error('toolsets.list 未注入')
+    return { toolsets: ctx.ops.listToolsets() }
+  },
+
+  'toolsets.active': (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.getActiveToolsets) throw new Error('toolsets.active 未注入')
+    return { toolsets: ctx.ops.getActiveToolsets(sessionId) }
+  },
+
+  'toolsets.set': (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    const names = strArray(p, 'names')
+    if (!sessionId || !names) throw new Error('sessionId and names required')
+    if (!ctx.ops?.setActiveToolsets || !ctx.ops.getActiveToolsets) {
+      throw new Error('toolsets.set 未注入')
+    }
+    ctx.ops.setActiveToolsets(sessionId, names)
+    return { ok: true, toolsets: ctx.ops.getActiveToolsets(sessionId) }
+  },
+
   'providers.list': async (ctx) => {
     if (!ctx.ops?.listProviders) throw new Error('providers.list 未注入')
     return { defaultId: ctx.ops.providerDefaultId?.() ?? '', providers: await ctx.ops.listProviders() }

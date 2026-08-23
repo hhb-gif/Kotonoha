@@ -14,7 +14,8 @@ import type {
 } from '../types'
 import type { ExtendedTool } from '../tools/protocol'
 import { buildSystemPrompt, historyToChatMessages } from './context'
-import { createDefaultHooks, runToolWithHooks, type HookRegistry } from '../tools/hooks'
+import { createDefaultHooks, runToolWithHooks, type Hook, type HookRegistry } from '../tools/hooks'
+import { resolveToolsets, DEFAULT_ACTIVE_TOOLSETS } from '../tools/toolsets'
 import { recordCost } from '../store/cost'
 import { estimateCost } from '../providers/cost'
 
@@ -38,10 +39,15 @@ export class TurnRunner {
   private sessionId = ''
   // 工具钩子注册表（审计轨迹 + bash 黑名单；按 db 惰性初始化）
   private hooks: HookRegistry | null = null
+  // 外部注入的钩子（插件 hook 等）：与内置钩子共存，注册顺序在插件加载时确定
+  private readonly extraHooks: Hook[]
+  // 外部钩子是否已注入（registerAll 幂等，只需注入一次）
+  private extraHooksInjected = false
 
-  constructor(opts: { deps: EngineDeps; dataDir: string }) {
+  constructor(opts: { deps: EngineDeps; dataDir: string; extraHooks?: Hook[] }) {
     this.deps = opts.deps
     this.dataDir = opts.dataDir
+    this.extraHooks = opts.extraHooks ?? []
   }
 
   /** 执行一个完整 turn：组装上下文 → 流式生成（可多轮）→ 工具循环 → finish */
@@ -63,9 +69,19 @@ export class TurnRunner {
     if (!provider) {
       throw new Error(`provider 不存在: ${session.provider}`)
     }
-    const tools = this.deps.tools.list()
+    // 渐进披露：先按 check_fn 门控（环境可用性）过滤，再按会话激活工具集过滤，
+    // 只把当前可用的工具 schema 交给模型
+    const checkCtx = { cwd: session.cwd, sessionId: session.id }
+    const availableTools =
+      typeof this.deps.tools.listAvailable === 'function'
+        ? await this.deps.tools.listAvailable({ checkCtx })
+        : this.deps.tools.list({ checkCtx })
+    const tools = resolveToolsets(availableTools, session.toolsets ?? [...DEFAULT_ACTIVE_TOOLSETS])
     const toolDefs = tools.length > 0 ? tools.map((t) => t.def) : undefined
-    console.log('[agent] run', session.id, 'provider:', session.provider, 'model:', session.model, 'tools:', tools.length)
+    console.log(
+      '[agent] run', session.id, 'provider:', session.provider, 'model:', session.model,
+      'tools:', tools.length, 'toolsets:', session.toolsets ?? [...DEFAULT_ACTIVE_TOOLSETS].join('+')
+    )
 
     // 跨轮累积的完整回复文本（最终落库用；roundText 每轮重置）
     let assistantText = ''
@@ -281,7 +297,12 @@ export class TurnRunner {
     try {
       const args: unknown = JSON.parse(call.args)
       // 经钩子执行：before（bash 黑名单门禁等）→ tool.run → after（审计轨迹落库）
+      // 外部钩子（插件注册）与内置钩子共存：内置（审计/黑名单）在前，插件在后
       this.hooks ??= createDefaultHooks(this.deps.db)
+      if (!this.extraHooksInjected && this.extraHooks.length > 0) {
+        this.hooks.registerAll(this.extraHooks)
+        this.extraHooksInjected = true
+      }
       return await runToolWithHooks(this.hooks, tool, ctx, args)
     } catch (err) {
       return {

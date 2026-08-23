@@ -359,13 +359,13 @@ function stubDeps(): {
   return { engine, approver, secrets }
 }
 
-/** 组装真实依赖；模块缺失时回落 stub */
-function loadDeps(hub: EventHub): {
+/** 组装真实依赖；模块缺失时回落 stub（异步：插件扫描加载需要 await） */
+async function loadDeps(hub: EventHub): Promise<{
   engine: SessionEngine
   approver: RpcHandlerContext['approver']
   secrets: SecretsStore
   ops?: RpcHandlerContext['ops']
-} {
+}> {
   try {
     // 并行 agent 交付的真实组装（store/providers/tools/auth/core/memory/mcp）
     // require 返回 any，缺失模块不会造成类型错误
@@ -384,7 +384,7 @@ function loadDeps(hub: EventHub): {
       }
     }
     const { createEngine } = require('./core/engine') as {
-      createEngine: (deps: unknown, opts: { dataDir: string }) => SessionEngine
+      createEngine: (deps: unknown, opts: { dataDir: string; extraHooks?: import('./tools/hooks').Hook[] }) => SessionEngine
     }
     const { buildDefaultRegistry } = require('./providers/registry') as {
       buildDefaultRegistry: (getKey: (ref: string) => string | undefined) => {
@@ -393,8 +393,14 @@ function loadDeps(hub: EventHub): {
         defaultId: () => string
       }
     }
-    const { buildDefaultTools } = require('./tools/registry') as {
+    const { buildDefaultTools, ToolRegistry } = require('./tools/registry') as {
       buildDefaultTools: () => import('./tools').Tool[]
+      ToolRegistry: new () => import('./tools/registry').ToolRegistry
+    }
+    const { listToolsets, validateToolsetNames, DEFAULT_ACTIVE_TOOLSETS } = require('./tools/toolsets') as {
+      listToolsets: () => { name: string; description: string; tools: string[] }[]
+      validateToolsetNames: (names: string[]) => string[]
+      DEFAULT_ACTIVE_TOOLSETS: readonly string[]
     }
     const { createSkillTool } = require('./tools/skills') as {
       createSkillTool: (db: unknown) => import('./types').Tool
@@ -447,17 +453,63 @@ function loadDeps(hub: EventHub): {
         sessionId: string
       ) => { ts: number; tool: string; args: string; ok: boolean; error?: string; sessionId: string }[]
     }
+    const { loadPlugins } = require('./tools/plugins/loader') as {
+      loadPlugins: (
+        dir: string
+      ) => Promise<{
+        tools: import('./tools/protocol').ExtendedTool[]
+        hooks: import('./tools/hooks').Hook[]
+        errors: { name: string; error: string }[]
+      }>
+    }
+    const { loadExternalTools } = require('./tools/external') as {
+      loadExternalTools: (
+        dir: string
+      ) => Promise<{
+        tools: import('./tools/protocol').ExtendedTool[]
+        errors: { file: string; error: string }[]
+      }>
+    }
 
     const db = openDb(dataDir) as import('./store').Db
     const secrets = openSecrets(dataDir)
     const store = buildDefaultStore(dataDir)
     const auth = buildDefaultAuth(secrets, (frame) => hub.broadcast(frame))
     const providers = buildDefaultRegistry((ref) => secrets.get(ref)) as import('./providers').ProviderRegistry
+    // 注册表实例：list({checkCtx})/listAvailable/get 满足 EngineDeps.tools 契约（check_fn 门控）
+    const registry = new ToolRegistry()
+    registry.registerAll(buildDefaultTools(), { source: 'default' })
     // execute_skill 换成带 db 的版本（内置 polish/storybeat + approved 自定义技能）
-    const tools = (buildDefaultTools() as import('./types').Tool[]).map((t) =>
-      t.def.name === 'execute_skill' ? createSkillTool(db) : t
-    )
+    registry.register(createSkillTool(db), { source: 'default', allowOverride: true })
+    const tools = registry.list()
+
+    // T3-plugins：扫描加载插件（目录为 src/tools/plugins 开发期 / dist/tools/plugins 编译后）
+    // 插件工具并入工具列表、插件钩子随引擎注入（与内置钩子共存）
+    // 错误隔离：loadPlugins 内部已隔离单个插件失败，此处仅做工具重名保护
+    const pluginDir = path.join(__dirname, 'tools', 'plugins')
+    const plugins = await loadPlugins(pluginDir)
+    for (const pt of plugins.tools) {
+      if (tools.some((t) => t.def.name === pt.def.name)) {
+        console.warn(`[plugins] 工具「${pt.def.name}」与现有工具重名，跳过该插件工具`)
+        continue
+      }
+      tools.push(pt)
+    }
+
     const mcp = buildDefaultMCP()
+
+    // T2-external：配置驱动外接工具（tool.yaml → shell/HTTP 工具，不写核心代码）
+    // 配置目录：<agent>/tools/external（tool.yaml / *.tools.yaml）；目录不存在 → 空
+    // 错误隔离：loadExternalTools 内部已隔离单个文件失败，此处仅做工具重名保护
+    const externalDir = path.join(__dirname, '..', 'tools', 'external')
+    const external = await loadExternalTools(externalDir)
+    for (const et of external.tools) {
+      if (tools.some((t) => t.def.name === et.def.name)) {
+        console.warn(`[external] 工具「${et.def.name}」与现有工具重名，跳过该外接工具`)
+        continue
+      }
+      tools.push(et)
+    }
 
     const ops: RpcHandlerContext['ops'] = {
       listTools: () => tools.map((t) => ({ name: t.def.name, description: t.def.description })),
@@ -500,6 +552,19 @@ function loadDeps(hub: EventHub): {
           status: s.status,
           tools: s.tools.map((t) => t.def.name),
         })),
+      // T1-toolsets：工具集门类（list / active / set，会话级持久化到 db）
+      listToolsets: () => listToolsets(),
+      getActiveToolsets: (id) => {
+        const rec = db.getSession(id)
+        if (!rec) throw new Error('会话不存在')
+        return rec.toolsets ?? [...DEFAULT_ACTIVE_TOOLSETS]
+      },
+      setActiveToolsets: (id, names) => {
+        const rec = db.getSession(id)
+        if (!rec) throw new Error('会话不存在')
+        // 未知集名剔除；空集合法（模型将收不到任何工具 schema，属用户显式选择）
+        db.updateSession(id, { toolsets: validateToolsetNames(names) })
+      },
       // C-memory2：语义记忆 + 程序性技能（走 db 已就绪接口）
       listMemories: (sessionId?: string) =>
         sessionId ? db.getMemoriesBySession(sessionId) : db.searchMemories('', 100),
@@ -529,16 +594,13 @@ function loadDeps(hub: EventHub): {
           list: () => providers.list(),
           defaultId: () => providers.defaultId(),
         },
-        tools: {
-          list: () => tools,
-          get: (name: string) => tools.find((t) => t.def.name === name),
-        },
+        tools: registry,
         approver: auth.engine,
         secrets,
         broadcast: (frame: OutboundFrame) => hub.broadcast(frame),
         systemPrompt: buildSystemPrompt,
       },
-      { dataDir }
+      { dataDir, extraHooks: plugins.hooks }
     )
     return { engine, approver: auth.engine, secrets, ops }
   } catch (e) {
@@ -547,10 +609,10 @@ function loadDeps(hub: EventHub): {
   }
 }
 
-export function main(): void {
+export async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? 3080)
   const hub = makeEventHub()
-  const { engine, approver, secrets, ops } = loadDeps(hub)
+  const { engine, approver, secrets, ops } = await loadDeps(hub)
   const { server } = startServer({ engine, approver, secrets, hub, port, ops })
   server.once('error', (e) => {
     console.error(`[agent] failed to listen on :${port}`, e)
@@ -561,4 +623,4 @@ export function main(): void {
   })
 }
 
-main()
+void main()

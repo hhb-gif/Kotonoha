@@ -41,6 +41,8 @@ export function forkSession(db: Db, sourceId: string): SessionRecord | null {
     model: source.model,
     createdAt: now,
     lastActiveAt: now,
+    // fork 继承源会话的激活工具集
+    toolsets: source.toolsets,
   }
 
   db.createSession(fork)

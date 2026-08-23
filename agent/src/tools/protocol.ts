@@ -5,8 +5,8 @@
 
 import type { Tool, ToolContext, ToolResult, ToolDef } from '../types'
 
-// 工具类型：内置 / MCP / 子 agent
-export type ToolKind = 'builtin' | 'mcp' | 'subagent'
+// 工具类型：内置 / MCP / 子 agent / 配置驱动（external，动态生成）
+export type ToolKind = 'builtin' | 'mcp' | 'subagent' | 'dynamic'
 
 // 工具分组：用于并行调度、权限、UI 分类
 export type ToolGroup =
@@ -18,6 +18,8 @@ export type ToolGroup =
   | 'mcp'         // MCP 工具
   | 'subagent'    // 子 agent 编排
   | 'checkpoint'  // 检查点工具
+  | 'plugin'      // 插件注册的工具（toolsets 集 plugins:<name> 的成员）
+  | 'external'    // 配置驱动外接工具（tool.yaml：shell / HTTP）
 
 // Hook 定义
 export interface ToolHooks {
@@ -105,6 +107,8 @@ export function createExtendedTool(
     hooks?: ToolHooks
     mcpConnection?: unknown
     subAgentConfig?: ExtendedTool['subAgentConfig']
+    // check_fn 门控（缺省透传 baseTool.check）
+    check?: ExtendedTool['check']
   } = {}
 ): ExtendedTool {
   const name = baseTool.def.name
@@ -116,6 +120,7 @@ export function createExtendedTool(
     hooks: options.hooks,
     mcpConnection: options.mcpConnection,
     subAgentConfig: options.subAgentConfig,
+    check: options.check ?? baseTool.check,
   }
 }
 

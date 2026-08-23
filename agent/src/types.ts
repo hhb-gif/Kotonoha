@@ -167,9 +167,17 @@ export interface ToolResult {
   error?: string
 }
 
+// check_fn 门控上下文：传给 Tool.check 做可用性判断（如 git 工具在非 git 目录隐藏）
+export interface ToolCheckContext {
+  cwd?: string
+  sessionId?: string
+}
+
 export interface Tool {
   def: ToolDef
   run(ctx: ToolContext, args: unknown): Promise<ToolResult>
+  // check_fn：环境/平台门控，false 则不出现在模型 schema（可选，默认可用）
+  check?(ctx?: ToolCheckContext): boolean | Promise<boolean>
 }
 
 // ---- Store（持久化）----
@@ -182,6 +190,8 @@ export interface SessionRecord {
   model: string
   createdAt: number
   lastActiveAt: number
+  // 会话级激活工具集（渐进披露；缺省时用 toolsets.DEFAULT_ACTIVE_TOOLSETS）
+  toolsets?: string[]
 }
 
 export interface Db {
@@ -265,7 +275,10 @@ export interface EngineDeps {
     defaultId(): string
   }
   tools: {
-    list(): Tool[]
+    // 同步列出（可传 checkCtx：同步 check_fn 立即生效，异步 check_fn 由 listAvailable 处理）
+    list(opts?: { checkCtx?: ToolCheckContext }): Tool[]
+    // 完整应用 check_fn（同步+异步）后列出；engine 组装 schema 用
+    listAvailable(opts?: { checkCtx?: ToolCheckContext }): Promise<Tool[]>
     get(name: string): Tool | undefined
   }
   approver: {
@@ -332,6 +345,10 @@ export interface RpcHandlerContext {
     getRules: () => { tool: string; level: 'allow' | 'ask' | 'deny' }[]
     setRules: (rules: { tool: string; level: 'allow' | 'ask' | 'deny' }[]) => void
     listMcpServers: () => { id: string; type: string; status: string; tools?: string[] }[]
+    // T1-toolsets：工具集门类（渐进披露 + 会话级激活）
+    listToolsets?: () => { name: string; description: string; tools: string[] }[]
+    getActiveToolsets?: (sessionId: string) => string[]
+    setActiveToolsets?: (sessionId: string, names: string[]) => void
     // C-memory2（Hermes 三层记忆）：语义记忆 + 程序性技能
     listMemories: (sessionId?: string) => MemoryEntry[]
     searchMemories: (query: string, limit: number) => MemoryEntry[]

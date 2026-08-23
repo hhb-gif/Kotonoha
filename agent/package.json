@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-plugin-assets.mjs",
+    "test:plugins": "tsx scripts/test-plugins.mjs",
     "mcp:serve": "node dist/mcp/serve.js"
   },
   "dependencies": {

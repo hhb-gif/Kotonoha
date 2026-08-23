@@ -1,23 +1,15 @@
 // ============================================================
 // registry.ts —— 工具注册表：ToolRegistry + buildDefaultTools
 // 增强：register 支持来源标记，list 支持过滤，内部维护扩展元信息
+//       buildDefaultTools 由 builtin/ 目录自发现（discover.ts），
+//       list({checkCtx}) / listAvailable 应用 check_fn 门控
 // 契约：types.ts Tool + protocol.ts ExtendedTool
 // ============================================================
 
-import type { Tool } from '../types'
+import type { Tool, ToolCheckContext } from '../types'
 import type { ExtendedTool, ToolKind, ToolGroup, ToolRegistration } from './protocol'
 import { createExtendedTool, DEFAULT_KIND } from './protocol'
-
-import { readFileTool, writeFileTool } from './file'
-import { editFileTool } from './file-edit'
-import { globTool } from './glob'
-import { grepTool } from './grep'
-import { taskTool } from './task'
-import { bashTool } from './bash'
-import { runCommandTool } from './terminal'
-import { gitStatusTool, gitCommitTool, gitLogTool } from './git'
-import { fetchUrlTool, webSearchTool } from './web'
-import { executeSkillTool } from './skills'
+import { discoverBuiltinTools } from './discover'
 
 export type { Tool } from '../types'
 export type { ExtendedTool, ToolKind, ToolGroup, ToolRegistration } from './protocol'
@@ -42,27 +34,9 @@ export interface RegisterOptions {
   allowOverride?: boolean
 }
 
-// 内置工具数组（基础 Tool，未扩展协议字段）
-const BUILTIN_TOOLS: Tool[] = [
-  readFileTool,
-  writeFileTool,
-  editFileTool,
-  globTool,
-  grepTool,
-  taskTool,
-  bashTool,
-  runCommandTool,
-  gitStatusTool,
-  gitCommitTool,
-  gitLogTool,
-  fetchUrlTool,
-  webSearchTool,
-  executeSkillTool,
-]
-
-/** 构建默认工具并扩展为 ExtendedTool */
+/** 构建默认工具并扩展为 ExtendedTool（来源：builtin/ 目录自发现，兜底手动清单） */
 export function buildDefaultTools(): ExtendedTool[] {
-  return BUILTIN_TOOLS.map((t) => createExtendedTool(t, { kind: DEFAULT_KIND }))
+  return discoverBuiltinTools().map((t) => createExtendedTool(t, { kind: DEFAULT_KIND }))
 }
 
 /** 增强版工具注册表 */
@@ -122,9 +96,48 @@ export class ToolRegistry {
     return this.tools.get(name)
   }
 
-  /** 列出所有工具（兼容现有：返回 Tool[]） */
-  list(): Tool[] {
-    return Array.from(this.tools.values())
+  /** 列出所有工具（兼容现有：返回 Tool[]；可传 checkCtx 应用同步 check_fn） */
+  list(opts?: { checkCtx?: ToolCheckContext }): Tool[] {
+    const all = Array.from(this.tools.values())
+    if (!opts?.checkCtx) return all
+    // 同步路径：只过滤同步 check（false 即隐藏）；异步 check 无法同步求值 → 保留，
+    // 需要完整门控（含异步 check）时用 listAvailable
+    return all.filter((t) => this.passesCheckSync(t, opts.checkCtx!))
+  }
+
+  /** 完整应用 check_fn（同步+异步）后列出；engine 组装 schema 用 */
+  async listAvailable(opts?: { checkCtx?: ToolCheckContext }): Promise<ExtendedTool[]> {
+    const all = Array.from(this.tools.values())
+    if (!opts?.checkCtx) return all
+    const out: ExtendedTool[] = []
+    for (const t of all) {
+      if (await this.passesCheck(t, opts.checkCtx)) out.push(t)
+    }
+    return out
+  }
+
+  /** check_fn 求值：无 check 视为可用；支持同步/异步返回值 */
+  private async passesCheck(t: ExtendedTool, ctx: ToolCheckContext): Promise<boolean> {
+    if (!t.check) return true
+    try {
+      const pass = await t.check(ctx)
+      return pass !== false
+    } catch {
+      // check 抛异常按不可用处理（不阻断整体列出）
+      return false
+    }
+  }
+
+  /** 同步求值：仅处理非 Promise 返回值；异步 check 一律视为通过（交给 listAvailable） */
+  private passesCheckSync(t: ExtendedTool, ctx: ToolCheckContext): boolean {
+    if (!t.check) return true
+    try {
+      const pass = t.check(ctx)
+      if (pass instanceof Promise) return true
+      return pass !== false
+    } catch {
+      return false
+    }
   }
 
   /** 列出扩展工具（含协议字段） */

@@ -21,10 +21,11 @@ interface SessionRow {
   created_at: number
   last_active_at: number
   archived_at: number
+  toolsets: string | null
 }
 
 function toSessionRecord(row: SessionRow): SessionRecord {
-  return {
+  const rec: SessionRecord = {
     id: row.id,
     cwd: row.cwd,
     label: row.label,
@@ -33,10 +34,22 @@ function toSessionRecord(row: SessionRow): SessionRecord {
     createdAt: row.created_at,
     lastActiveAt: row.last_active_at,
   }
+  // toolsets 列存 JSON 数组字符串；解析失败视为未设置（缺省走 DEFAULT_ACTIVE_TOOLSETS）
+  if (row.toolsets) {
+    try {
+      const parsed = JSON.parse(row.toolsets) as unknown
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+        rec.toolsets = parsed as string[]
+      }
+    } catch {
+      // 忽略坏数据
+    }
+  }
+  return rec
 }
 
 const SESSION_COLUMNS =
-  'id, cwd, label, provider, model, created_at, last_active_at, archived_at'
+  'id, cwd, label, provider, model, created_at, last_active_at, archived_at, toolsets'
 
 export function openDb(dir: string): Db {
   // 目录不存在则创建
@@ -93,6 +106,13 @@ export function openDb(dir: string): Db {
   // 迁移：为旧表添加 archived_at 列
   try {
     db.exec(`ALTER TABLE sessions ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`)
+  } catch {
+    // 列已存在，忽略
+  }
+
+  // 迁移：为旧表添加 toolsets 列（JSON 数组字符串；NULL = 未设置，走默认激活集）
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN toolsets TEXT`)
   } catch {
     // 列已存在，忽略
   }
@@ -165,11 +185,13 @@ export function openDb(dir: string): Db {
   })
 
   // 会话表可被动态更新的字段（last_active_at 恒随更新刷新）
-  const UPDATABLE: { field: keyof SessionRecord; column: string }[] = [
+  const UPDATABLE: { field: keyof SessionRecord; column: string; serialize?: (v: unknown) => unknown }[] = [
     { field: 'cwd', column: 'cwd' },
     { field: 'label', column: 'label' },
     { field: 'provider', column: 'provider' },
     { field: 'model', column: 'model' },
+    // toolsets 以 JSON 数组字符串落库
+    { field: 'toolsets', column: 'toolsets', serialize: (v) => JSON.stringify(v) },
   ]
 
   return {
@@ -207,10 +229,10 @@ export function openDb(dir: string): Db {
     updateSession(id: string, patch: Partial<SessionRecord>): void {
       const sets: string[] = []
       const params: Record<string, unknown> = { id, lastActiveAt: Date.now() }
-      for (const { field, column } of UPDATABLE) {
+      for (const { field, column, serialize } of UPDATABLE) {
         if (patch[field] !== undefined) {
           sets.push(`${column} = @${field}`)
-          params[field] = patch[field]
+          params[field] = serialize ? serialize(patch[field]) : patch[field]
         }
       }
       sets.push('last_active_at = @lastActiveAt')

@@ -11,6 +11,7 @@ import type {
   SessionEvent,
   SessionRecord,
 } from '../types'
+import type { Hook } from '../tools/hooks'
 import { TurnRunner } from './agent'
 import { DEFAULT_DATA_DIR } from './context'
 import { createSessionRecord, forkSession } from '../store/sessions'
@@ -20,9 +21,12 @@ interface PendingTurn {
   text: string
 }
 
-export function createEngine(deps: EngineDeps, opts: { dataDir?: string } = {}): SessionEngine {
+export function createEngine(
+  deps: EngineDeps,
+  opts: { dataDir?: string; extraHooks?: Hook[] } = {}
+): SessionEngine {
   const dataDir = opts.dataDir || DEFAULT_DATA_DIR
-  const runner = new TurnRunner({ deps, dataDir })
+  const runner = new TurnRunner({ deps, dataDir, extraHooks: opts.extraHooks })
 
   let busy = false
   const pending: PendingTurn[] = []
