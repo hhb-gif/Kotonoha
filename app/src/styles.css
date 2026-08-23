@@ -1625,3 +1625,38 @@ body {
   from { opacity: 0; transform: translateX(14px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* ============ 对话页停止生成按钮（thinking/action 时显示） ============ */
+
+.btn-stop {
+  position: absolute;
+  right: calc(50% - min(38vw, 500px) - 60px);
+  bottom: 28px;
+  z-index: 6;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #f0b0b0;
+  background: rgba(60, 20, 24, 0.78);
+  border: 1px solid rgba(240, 130, 130, 0.45);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  animation: btn-stop-in 0.2s ease-out;
+}
+
+.btn-stop:hover {
+  background: rgba(80, 24, 30, 0.9);
+  border-color: #f0a0a0;
+  box-shadow: 0 0 14px rgba(240, 130, 130, 0.35);
+}
+
+.btn-stop:active {
+  transform: scale(0.96);
+}
+
+@keyframes btn-stop-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

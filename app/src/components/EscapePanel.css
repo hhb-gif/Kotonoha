@@ -950,3 +950,409 @@
   from { opacity: 0; transform: translate(-50%, 8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ============ U2 新增：工具集切换 / 技能审批 / 记忆 / 搜索 / 成本 / 轨迹 / 停止 ============ */
+
+/* ---- 工具集切换 chips ---- */
+.ep-toolsets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ep-toolset-chip {
+  padding: 7px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #c9c4d8;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ep-toolset-chip:hover:not(:disabled) {
+  color: #EDEDEF;
+  border-color: rgba(232, 201, 122, 0.5);
+}
+
+.ep-toolset-chip.active {
+  color: #1a1326;
+  font-weight: 700;
+  background: linear-gradient(90deg, #e8c97a, #d4b163);
+  border-color: rgba(232, 201, 122, 0.8);
+  box-shadow: 0 0 12px rgba(232, 201, 122, 0.3);
+}
+
+.ep-toolset-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- 工具来源徽章 ---- */
+.ep-tools-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ep-src-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.ep-src-builtin {
+  color: #5E6AD2;
+  background: rgba(94, 106, 210, 0.14);
+  border-color: rgba(94, 106, 210, 0.35);
+}
+
+.ep-src-checkpoint {
+  color: #e8c97a;
+  background: rgba(232, 201, 122, 0.1);
+  border-color: rgba(232, 201, 122, 0.4);
+}
+
+.ep-src-external {
+  color: #7fc8a9;
+  background: rgba(127, 200, 169, 0.1);
+  border-color: rgba(127, 200, 169, 0.35);
+}
+
+.ep-src-plugin {
+  color: #e08c9d;
+  background: rgba(224, 140, 157, 0.1);
+  border-color: rgba(224, 140, 157, 0.35);
+}
+
+/* ---- 待批准 / 已批准技能 ---- */
+.ep-skill-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-skill-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.ep-skill-pending-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ep-skill-pending-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #EDEDEF;
+  word-break: break-all;
+}
+
+.ep-skill-pending-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8A8F98;
+  word-break: break-all;
+}
+
+.ep-skill-pending-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+.ep-approve-btn,
+.ep-reject-btn {
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 2px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ep-approve-btn {
+  color: #1a1326;
+  background: linear-gradient(90deg, #e8c97a, #d4b163);
+  border: 1px solid rgba(232, 201, 122, 0.8);
+}
+
+.ep-approve-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 0 12px rgba(232, 201, 122, 0.35);
+}
+
+.ep-reject-btn {
+  color: #e0716f;
+  background: rgba(224, 113, 111, 0.08);
+  border: 1px solid rgba(224, 113, 111, 0.4);
+}
+
+.ep-reject-btn:hover:not(:disabled) {
+  background: rgba(224, 113, 111, 0.16);
+}
+
+.ep-approve-btn:disabled,
+.ep-reject-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ep-skill-approved {
+  opacity: 0.85;
+}
+
+/* ---- 记忆展示（言叶记得的事）---- */
+.ep-memories {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-memory-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 14px;
+  background: rgba(94, 106, 210, 0.07);
+  border: 1px solid rgba(94, 106, 210, 0.22);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ep-memory-entity {
+  flex: 0 0 auto;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #e8c97a;
+}
+
+.ep-memory-relation {
+  flex: 0 0 auto;
+  color: #5E6AD2;
+}
+
+.ep-memory-detail {
+  flex: 1;
+  min-width: 0;
+  color: #c9c4d8;
+  word-break: break-all;
+}
+
+/* ---- 会话搜索 ---- */
+.ep-search-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ep-search-input {
+  flex: 1;
+}
+
+.ep-search-results {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.ep-search-head {
+  margin-bottom: 8px;
+}
+
+.ep-search-count {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #8A8F98;
+}
+
+.ep-search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.ep-search-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-search-time {
+  font-size: 11px;
+  color: #8A8F98;
+}
+
+.ep-search-type {
+  padding: 1px 8px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #5E6AD2;
+  background: rgba(94, 106, 210, 0.14);
+  border: 1px solid rgba(94, 106, 210, 0.3);
+  border-radius: 999px;
+}
+
+.ep-search-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c9c4d8;
+  word-break: break-all;
+}
+
+/* ---- 停止生成（会话页）---- */
+.ep-stop {
+  color: #e0716f;
+  background: rgba(224, 113, 111, 0.08);
+  border: 1px solid rgba(224, 113, 111, 0.45);
+}
+
+.ep-stop:hover {
+  background: rgba(224, 113, 111, 0.16);
+  box-shadow: 0 0 14px rgba(224, 113, 111, 0.3);
+}
+
+/* ---- 成本统计 ---- */
+.ep-cost-total {
+  padding: 12px 14px;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #EDEDEF;
+  background: rgba(232, 201, 122, 0.08);
+  border: 1px solid rgba(232, 201, 122, 0.3);
+  border-radius: 12px;
+}
+
+.ep-cost-amount {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 16px;
+  color: #e8c97a;
+}
+
+.ep-cost-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-cost-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.ep-cost-sid {
+  flex: 1;
+  min-width: 0;
+  color: #EDEDEF;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-cost-tokens {
+  flex: 0 0 auto;
+  color: #8A8F98;
+}
+
+/* ---- 轨迹审计（details 折叠）---- */
+.ep-details {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ep-details-summary {
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #c9c4d8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ep-details-summary:hover {
+  color: #e8c97a;
+}
+
+.ep-trajectory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 14px 14px;
+}
+
+.ep-trajectory-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  background: rgba(10, 7, 20, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+
+.ep-trajectory-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-trajectory-tool {
+  flex: 1;
+  min-width: 0;
+  color: #EDEDEF;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-trajectory-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #8A8F98;
+}
+
+.ep-trajectory-args {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8A8F98;
+  word-break: break-all;
+}

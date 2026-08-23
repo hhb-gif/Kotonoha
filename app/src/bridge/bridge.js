@@ -685,6 +685,140 @@ export async function selectModel(provider, model, sessionId) {
   }
 }
 
+// ---- Harness v2/v3 扩展方法（契约见 docs/plans/frontend-v2v3.md）----
+// 全部复用 api()，成功返回 { ok:true, ...数据 }，失败返回 { ok:false, error }。
+
+/** 工具集目录（toolsets.list）：value { toolsets:[{name,description,tools}] }。 */
+export async function listToolsets() {
+  try {
+    const value = await api('toolsets.list', {})
+    return { ok: true, toolsets: value?.toolsets || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 当前会话激活的工具集（toolsets.active）：value 兼容 {toolsets:[...]} / {active:[...]}。 */
+export async function getActiveToolsets(sessionId) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  try {
+    const value = await api('toolsets.active', { sessionId: sid })
+    const toolsets = value?.toolsets || value?.active || []
+    return { ok: true, toolsets }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 设置当前会话激活的工具集（toolsets.set）：payload { sessionId, names } → value { ok }。 */
+export async function setActiveToolsets(sessionId, names) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  try {
+    await api('toolsets.set', { sessionId: sid, names: names || [] })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 搜索会话历史（session.search）：payload { sessionId, query, limit? } → value { results:[...] }。 */
+export async function searchSession(sessionId, query, limit) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  if (!query) return { ok: false, error: '缺少搜索关键词' }
+  try {
+    const payload = { sessionId: sid, query }
+    if (limit !== undefined && limit !== null) payload.limit = limit
+    const value = await api('session.search', payload)
+    return { ok: true, results: value?.results || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 中断当前生成（session.interrupt）：payload { sessionId } → value { ok }。 */
+export async function interruptSession(sessionId) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  try {
+    await api('session.interrupt', { sessionId: sid })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 成本统计（stats.cost）：value { total, bySession }。 */
+export async function getCostStats() {
+  try {
+    const value = await api('stats.cost', {})
+    return {
+      ok: true,
+      total: value?.total || 0,
+      bySession: value?.bySession || value?.sessions || {},
+    }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 语义记忆列表（memory.list）：payload { sessionId? } → value { memories:[...] }。 */
+export async function listMemories(sessionId) {
+  try {
+    const payload = sessionId ? { sessionId } : {}
+    const value = await api('memory.list', payload)
+    return { ok: true, memories: value?.memories || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 技能列表（skills.list）：value { skills:[...] }（含 pending 项）。 */
+export async function listSkills() {
+  try {
+    const value = await api('skills.list', {})
+    return { ok: true, skills: value?.skills || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 批准技能（skills.approve）：payload { id } → value { ok }。 */
+export async function approveSkill(id) {
+  if (!id) return { ok: false, error: '缺少技能 ID' }
+  try {
+    await api('skills.approve', { id })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 拒绝技能（skills.reject）：payload { id } → value { ok }。 */
+export async function rejectSkill(id) {
+  if (!id) return { ok: false, error: '缺少技能 ID' }
+  try {
+    await api('skills.reject', { id })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 会话轨迹（session.trajectory）：payload { sessionId } → value { trajectory:[...] }。 */
+export async function getTrajectory(sessionId) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  try {
+    const value = await api('session.trajectory', { sessionId: sid })
+    return { ok: true, trajectory: value?.trajectory || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
 // ---- 初始化 ----
 let initStarted = false
 
@@ -727,6 +861,17 @@ export default {
   setRules,
   mcpStatus,
   selectModel,
+  listToolsets,
+  getActiveToolsets,
+  setActiveToolsets,
+  searchSession,
+  interruptSession,
+  getCostStats,
+  listMemories,
+  listSkills,
+  approveSkill,
+  rejectSkill,
+  getTrajectory,
   respondApproval,
   CHARACTERS,
 }

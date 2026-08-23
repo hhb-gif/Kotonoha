@@ -591,6 +591,25 @@ export default function App() {
     [approval, showToast]
   )
 
+  // 停止当前生成（status 为 thinking/action 时显示「■ 停止」按钮）
+  const handleStop = useCallback(async () => {
+    const sid = window.__bridgeDebug?.state?.sessionId
+    if (!sid) {
+      showToast('会话未就绪')
+      return
+    }
+    if (!bridge.interruptSession) {
+      showToast('停止接口未就绪（等待 bridge 合入）')
+      return
+    }
+    try {
+      const res = await bridge.interruptSession(sid)
+      showToast(res?.ok ? '已发送停止指令' : res?.error || '停止失败')
+    } catch (err) {
+      showToast(`停止失败：${err.message}`)
+    }
+  }, [showToast])
+
   // ESC 面板打开时刷新模型信息
   useEffect(() => {
     if (!escOpen) return
@@ -710,6 +729,13 @@ export default function App() {
         onSettings={() => setSettingsOpen(true)}
       />
 
+      {/* 思考/执行技能中：显示「■ 停止」小按钮，中断当前生成 */}
+      {status !== 'ready' && (
+        <button type="button" className="btn-stop" onClick={handleStop} aria-label="停止生成">
+          ■ 停止
+        </button>
+      )}
+
       <SettingsPanel
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -736,6 +762,7 @@ export default function App() {
         messageCount={messages.length}
         onSave={handlePanelSave}
         onBackToMenu={goMain}
+        busy={status !== 'ready'}
       />
 
       <LogViewer
