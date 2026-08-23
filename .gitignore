@@ -8,6 +8,7 @@ release-*/
 
 # 打包产物
 app/dist-final/
+app/dist-release/
 app/release/
 app/dist-electron/
 app/dist-el/

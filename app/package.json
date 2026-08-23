@@ -20,7 +20,7 @@
     "productName": "Kotonoha",
     "copyright": "Copyright © 2026 Kotonoha",
     "directories": {
-      "output": "dist-final",
+      "output": "dist-release",
       "buildResources": "build"
     },
     "files": [
