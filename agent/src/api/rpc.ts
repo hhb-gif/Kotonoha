@@ -93,6 +93,12 @@ const routes: Record<string, Route> = {
     return ctx.engine.prompt(sessionId, firstText(p.content))
   },
 
+  'session.interrupt': (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    return ctx.engine.interrupt(sessionId)
+  },
+
   'session.history': (ctx, p) => {
     const sessionId = str(p, 'sessionId')
     if (!sessionId) throw new Error('sessionId required')
@@ -237,6 +243,90 @@ const routes: Record<string, Route> = {
   'mcp.status': (ctx) => {
     if (!ctx.ops?.listMcpServers) throw new Error('mcp.status 未注入')
     return { servers: ctx.ops.listMcpServers() }
+  },
+
+  // ---- C-memory2（三层记忆 RPC）：memory.list / skills.list / skills.approve / skills.reject ----
+
+  'memory.list': (ctx, p) => {
+    if (!ctx.ops?.listMemories) throw new Error('memory.list 未注入')
+    const sessionId = str(p, 'sessionId')
+    const query = str(p, 'query')
+    // 有 query → 全文检索；否则按会话列出（无 sessionId 时返回全部）
+    if (query) {
+      if (!ctx.ops.searchMemories) throw new Error('memory.search 未注入')
+      const limit = typeof p.limit === 'number' ? p.limit : 10
+      return { memories: ctx.ops.searchMemories(query, limit) }
+    }
+    return { memories: ctx.ops.listMemories(sessionId) }
+  },
+
+  'skills.list': (ctx, p) => {
+    if (!ctx.ops?.listSkills) throw new Error('skills.list 未注入')
+    const status = str(p, 'status') ?? 'pending'
+    if (status !== 'pending' && status !== 'approved' && status !== 'rejected') {
+      throw new Error('status 必须是 pending / approved / rejected')
+    }
+    return { skills: ctx.ops.listSkills(status) }
+  },
+
+  'skills.approve': (ctx, p) => {
+    if (!ctx.ops?.approveSkill) throw new Error('skills.approve 未注入')
+    const id = typeof p.id === 'number' ? p.id : Number(p.id)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('id required')
+    const skill = ctx.ops.approveSkill(id)
+    if (!skill) throw new Error(`技能不存在：${id}`)
+    return { ok: true, skill }
+  },
+
+  'skills.reject': (ctx, p) => {
+    if (!ctx.ops?.rejectSkill) throw new Error('skills.reject 未注入')
+    const id = typeof p.id === 'number' ? p.id : Number(p.id)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('id required')
+    const skill = ctx.ops.rejectSkill(id)
+    if (!skill) throw new Error(`技能不存在：${id}`)
+    return { ok: true, skill }
+  },
+
+  // ---- E-ops（成本统计 / 全文搜索 / 轨迹审计）----
+
+  'stats.cost': (ctx) => {
+    if (!ctx.ops?.getTotalCost) throw new Error('stats.cost 未注入')
+    const agg = ctx.ops.getTotalCost()
+    // 契约返回 { total, bySession: { id: { tokens, cost } } }
+    const bySession: Record<string, { tokens: number; cost: number }> = {}
+    for (const id of Object.keys(agg.bySession)) {
+      const s = agg.bySession[id]
+      bySession[id] = { tokens: s.tokens, cost: s.costUsd }
+    }
+    return { total: agg.totalCostUsd, bySession }
+  },
+
+  'stats.cost.session': (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.getSessionCost) throw new Error('stats.cost.session 未注入')
+    return ctx.ops.getSessionCost(sessionId)
+  },
+
+  'stats.cost.csv': (ctx) => {
+    if (!ctx.ops?.exportCostCsv) throw new Error('stats.cost.csv 未注入')
+    return { csv: ctx.ops.exportCostCsv() }
+  },
+
+  'session.search': (ctx, p) => {
+    const sessionId = str(p, 'sessionId') ?? ''
+    const query = str(p, 'query')
+    if (!query) throw new Error('query required')
+    if (!ctx.ops?.searchEvents) throw new Error('session.search 未注入')
+    const limit = typeof p.limit === 'number' ? p.limit : 20
+    return { results: ctx.ops.searchEvents(sessionId, query, limit) }
+  },
+
+  'session.trajectory': (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.getTrajectory) throw new Error('session.trajectory 未注入')
+    return { trajectory: ctx.ops.getTrajectory(sessionId) }
   },
 }
 

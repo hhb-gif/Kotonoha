@@ -87,3 +87,6 @@ export * from './sessions'
 export * from './export'
 export * from './compress'
 export * from './archive'
+// E-ops（M4-4.1 成本 / M3-3.3 全文搜索）
+export * from './cost'
+export * from './search'

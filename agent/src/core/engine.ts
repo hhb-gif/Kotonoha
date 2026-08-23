@@ -26,6 +26,8 @@ export function createEngine(deps: EngineDeps, opts: { dataDir?: string } = {}):
 
   let busy = false
   const pending: PendingTurn[] = []
+  // 活动 turn 的中断控制器（sessionId → AbortController），interrupt 时 abort 对应 turn
+  const active = new Map<string, AbortController>()
 
   function broadcastEvent(sessionId: string, event: SessionEvent): void {
     deps.broadcast({
@@ -46,8 +48,11 @@ export function createEngine(deps: EngineDeps, opts: { dataDir?: string } = {}):
 
         console.log('[engine] turn/start', session.id, 'text:', next.text.slice(0, 40))
         broadcastEvent(session.id, { type: 'turn/start' })
+        // 本 turn 的中断控制器：interrupt 后可随时 abort
+        const controller = new AbortController()
+        active.set(session.id, controller)
         try {
-          await runner.run(session, next.text)
+          await runner.run(session, next.text, controller.signal)
         } catch (err) {
           // TurnRunner 内部已兜底；防御性再兜一层
           const message = err instanceof Error ? err.message : String(err)
@@ -56,6 +61,7 @@ export function createEngine(deps: EngineDeps, opts: { dataDir?: string } = {}):
             data: { chunk: { type: 'finish', reason: { kind: 'error', message } } },
           })
         } finally {
+          active.delete(session.id)
           broadcastEvent(session.id, { type: 'turn/end' })
         }
       }
@@ -77,6 +83,23 @@ export function createEngine(deps: EngineDeps, opts: { dataDir?: string } = {}):
       pending.push({ sessionId, text })
       if (!busy) void pump()
       return { accepted: true }
+    },
+
+    interrupt(sessionId: string): { ok: boolean } {
+      // 1. 有活动 turn → abort（TurnRunner 收到 signal 后发 finish error + turn/end 由 pump 收尾）
+      const controller = active.get(sessionId)
+      if (controller) {
+        controller.abort()
+        active.delete(sessionId)
+        console.log('[engine] interrupt', sessionId)
+        return { ok: true }
+      }
+      // 2. 无活动 turn → 清理排队中该会话的 prompt（防止中断后残留挂起状态）
+      for (let i = pending.length - 1; i >= 0; i--) {
+        if (pending[i].sessionId === sessionId) pending.splice(i, 1)
+      }
+      // 幂等：会话未在运行也返回 ok（前端「停止」按钮无需关心状态）
+      return { ok: true }
     },
 
     history(sessionId: string): { events: { event: HistoryEvent }[] } {

@@ -50,7 +50,7 @@ export class OpenAICompatProvider implements ModelProvider {
       getKey: this.getKey,
       params: p,
     })
-    for await (const chunk of streamSSE(resp, { signal: p.signal })) {
+    for await (const chunk of streamSSE(resp, { signal: p.signal, onUsage: p.onUsage })) {
       yield chunk
     }
   }
@@ -112,6 +112,8 @@ export function buildChatBody(p: StreamParams): Record<string, unknown> {
     }),
     stream: true,
     max_tokens: 4096,
+    // 流式响应尾部附带 usage（OpenAI 兼容约定；不支持的端点忽略此参数）
+    stream_options: { include_usage: true },
   }
   // thinking 模式开关（DeepSeek V4；其它 OpenAI 兼容端点忽略此参数）
   if (p.thinking) {
@@ -180,6 +182,8 @@ export interface SSEHandlers {
   onReasoning?: (text: string) => void
   onToolCall?: (call: { id: string; name: string; args: string }) => void
   onDone?: () => void
+  // 尾部 usage 回调（OpenAI 兼容格式：prompt_tokens / completion_tokens）
+  onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void
 }
 
 interface ToolCallAccum {
@@ -247,6 +251,16 @@ export async function* streamSSE(
           json = JSON.parse(payload)
         } catch {
           continue // 非 JSON 行（如 keep-alive）忽略
+        }
+        // 尾部 usage（与 choices 同 chunk 或独立 chunk 都可能出现）
+        if (json?.usage && typeof json.usage === 'object') {
+          const u = json.usage as { prompt_tokens?: number; completion_tokens?: number }
+          if (typeof u.prompt_tokens === 'number' && typeof u.completion_tokens === 'number') {
+            handlers.onUsage?.({
+              promptTokens: u.prompt_tokens,
+              completionTokens: u.completion_tokens,
+            })
+          }
         }
         const choice = json?.choices?.[0]
         if (!choice) continue

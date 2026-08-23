@@ -122,6 +122,8 @@ export interface StreamParams {
   signal?: AbortSignal
   // 可选：thinking 模式开关与强度（DeepSeek V4：thinking.type enabled/disabled + reasoning_effort low/medium/high/xhigh/max）
   thinking?: { enabled?: boolean; effort?: string }
+  // 可选：流式响应尾部 usage 回调（SSE 解析到 prompt_tokens/completion_tokens 时触发，用于成本落库）
+  onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void
 }
 
 export type ProviderCapability = 'chat' | 'reasoning' | 'tool-calls' | 'image' | 'video'
@@ -196,10 +198,53 @@ export interface Db {
   deleteEvents(sessionId: string): void
   // 设置
   getSetting(key: string): string | null
-  setSetting(key: string, value: string): void
+  // value 可为任意 JSON 值（内部序列化存储），调用方自行断言类型
+  setSetting(key: string, value: unknown): void
+  // 语义记忆（Hermes 模式 semantic 层）
+  insertMemory(
+    sessionId: string,
+    entity: string,
+    relation: string,
+    detail: string,
+    confidence: number
+  ): void
+  getMemoriesBySession(sessionId: string): MemoryEntry[]
+  searchMemories(query: string, limit: number): MemoryEntry[]
+  // 程序性技能（procedural 层）
+  insertSkill(
+    name: string,
+    trigger: string,
+    content: string,
+    status: 'pending' | 'approved' | 'rejected'
+  ): number
+  getSkillsByStatus(status: 'pending' | 'approved' | 'rejected'): SkillEntry[]
+  getSkillById(id: number): SkillEntry | null
+  updateSkillStatus(id: number, status: 'pending' | 'approved' | 'rejected'): void
   close(): void
   // 底层数据库实例（高级用法）
   _db: any
+}
+
+/** 语义记忆条目（memories 表行） */
+export interface MemoryEntry {
+  id: number
+  session_id: string
+  entity: string
+  relation: string
+  detail: string
+  confidence: number
+  created_at: number
+}
+
+/** 技能条目（skills 表行） */
+export interface SkillEntry {
+  id: number
+  name: string
+  trigger: string
+  content: string
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: number
+  approved_at: number | null
 }
 
 export interface SecretsStore {
@@ -240,6 +285,8 @@ export interface EngineDeps {
 export interface SessionEngine {
   create(cwd: string): SessionRecord
   prompt(sessionId: string, text: string): { accepted: boolean }
+  /** 中断会话正在进行的 turn（幂等：无活动 turn 也返回 ok） */
+  interrupt(sessionId: string): { ok: boolean }
   history(sessionId: string): { events: { event: HistoryEvent }[] }
   selectModel(sessionId: string, provider: string, model: string): { ok: boolean }
   list(): SessionRecord[]
@@ -285,6 +332,33 @@ export interface RpcHandlerContext {
     getRules: () => { tool: string; level: 'allow' | 'ask' | 'deny' }[]
     setRules: (rules: { tool: string; level: 'allow' | 'ask' | 'deny' }[]) => void
     listMcpServers: () => { id: string; type: string; status: string; tools?: string[] }[]
+    // C-memory2（Hermes 三层记忆）：语义记忆 + 程序性技能
+    listMemories: (sessionId?: string) => MemoryEntry[]
+    searchMemories: (query: string, limit: number) => MemoryEntry[]
+    listSkills: (status: 'pending' | 'approved' | 'rejected') => SkillEntry[]
+    approveSkill: (id: number) => SkillEntry | null
+    rejectSkill: (id: number) => SkillEntry | null
+    // E-ops（M4-4.1 成本 / M3-3.3 搜索 / M3-3.4 轨迹）：可选注入
+    getSessionCost?: (sessionId: string) => {
+      sessionId: string
+      records: unknown[]
+      tokens: { prompt: number; completion: number }
+      costUsd: number
+    }
+    getTotalCost?: () => {
+      totalCostUsd: number
+      totalTokens: number
+      bySession: Record<string, { sessionId: string; tokens: number; costUsd: number }>
+    }
+    exportCostCsv?: () => string
+    searchEvents?: (
+      sessionId: string,
+      query: string,
+      limit?: number
+    ) => { id: number; sessionId: string; seq: number; payload: unknown; snippet?: string }[]
+    getTrajectory?: (
+      sessionId: string
+    ) => { ts: number; tool: string; args: string; ok: boolean; error?: string; sessionId: string }[]
   }
 }
 

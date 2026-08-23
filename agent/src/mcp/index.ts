@@ -80,5 +80,6 @@ function interpolateConfig(config: MCPServerConfig, cwd: string): MCPServerConfi
 
 export { MCPRegistry } from './registry'
 export { MCPClient } from './client'
+export { createMCPServer, startStdioServer } from './server'
 export type { MCPServerConfig, MCPTool, MCPToolResult, MCPConnection } from './client'
 export type { RegisteredServer } from './registry'

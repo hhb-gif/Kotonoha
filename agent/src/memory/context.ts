@@ -12,6 +12,7 @@ import { loadRules, appendSessionRule } from './rules'
 import { resolveMentions, fileRefsToSystemFragments } from './mentions'
 import { recordBond, extractBondTriggers, triggerToRule, getBonds } from './bonds'
 import { compressHistory, estimateTokens, estimateMessagesTokens, summaryToSystemFragment } from './summarizer'
+import { injectMemoryContext } from './semantic'
 import { buildSystemPrompt } from '../core/context'
 
 export interface ContextOpts {
@@ -178,6 +179,12 @@ export class DefaultMemoryEngine implements MemoryEngine {
 
     if (bondRules) {
       systemParts.push('\n## 羁绊记忆（会话沉淀）\n' + bondRules)
+    }
+
+    // 6.5 语义记忆注入（Hermes semantic 层）：相关记忆作为「关于你的记忆」片段
+    const memoryFragment = injectMemoryContext(this.db, history, projectRoot)
+    if (memoryFragment) {
+      systemParts.push('\n## 关于你的记忆\n' + memoryFragment)
     }
 
     if (summaryFragment) {

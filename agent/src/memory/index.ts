@@ -8,6 +8,8 @@ export * from './mentions'
 export * from './bonds'
 export * from './summarizer'
 export * from './context'
+export * from './semantic'
+export * from './autoskill'
 
 import type { Db } from '../store/db'
 import type { ModelProvider } from '../types'

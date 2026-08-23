@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "mcp:serve": "node dist/mcp/serve.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

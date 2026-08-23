@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
-import type { Db, HistoryEvent, SessionRecord } from '../types'
+import type { Db, HistoryEvent, MemoryEntry, SessionRecord, SkillEntry } from '../types'
 
 export type { Db }
 
@@ -67,6 +67,27 @@ export function openDb(dir: string): Db {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS memories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0.8,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+    CREATE INDEX IF NOT EXISTS idx_memories_entity ON memories(entity);
+    CREATE TABLE IF NOT EXISTS skills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', -- pending / approved / rejected
+      created_at INTEGER NOT NULL,
+      approved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status);
   `)
 
   // 迁移：为旧表添加 archived_at 列
@@ -108,6 +129,33 @@ export function openDb(dir: string): Db {
   )
   const deleteSessionStmt = db.prepare(
     `DELETE FROM sessions WHERE id = ?`
+  )
+
+  // memories table prepared statements
+  const insertMemory = db.prepare(
+    `INSERT INTO memories (session_id, entity, relation, detail, confidence, created_at)
+     VALUES (@sessionId, @entity, @relation, @detail, @confidence, @createdAt)`
+  )
+  const selectMemoriesBySession = db.prepare(
+    `SELECT * FROM memories WHERE session_id = ? ORDER BY created_at DESC`
+  )
+  const searchMemories = db.prepare(
+    `SELECT * FROM memories WHERE entity LIKE ? OR relation LIKE ? OR detail LIKE ? ORDER BY confidence DESC, created_at DESC LIMIT ?`
+  )
+
+  // skills table prepared statements
+  const insertSkill = db.prepare(
+    `INSERT INTO skills (name, trigger, content, status, created_at, approved_at)
+     VALUES (@name, @trigger, @content, @status, @createdAt, @approvedAt)`
+  )
+  const selectSkillsByStatus = db.prepare(
+    `SELECT * FROM skills WHERE status = ? ORDER BY created_at DESC`
+  )
+  const selectSkillById = db.prepare(
+    `SELECT * FROM skills WHERE id = ?`
+  )
+  const updateSkillStatus = db.prepare(
+    `UPDATE skills SET status = @status, approved_at = @approvedAt WHERE id = @id`
   )
 
   // 删除会话 = 删 events + 删 sessions，事务保证原子性
@@ -192,12 +240,41 @@ export function openDb(dir: string): Db {
       return row ? (JSON.parse(row.value) as string) : null
     },
 
-    setSetting(key: string, value: string): void {
+    setSetting(key: string, value: unknown): void {
       upsertSetting.run(key, JSON.stringify(value))
     },
 
     close(): void {
       db.close()
+    },
+
+    // 语义记忆
+    insertMemory(sessionId: string, entity: string, relation: string, detail: string, confidence: number): void {
+      insertMemory.run({ sessionId, entity, relation, detail, confidence, createdAt: Date.now() })
+    },
+    getMemoriesBySession(sessionId: string): MemoryEntry[] {
+      return selectMemoriesBySession.all(sessionId) as MemoryEntry[]
+    },
+    searchMemories(query: string, limit: number): MemoryEntry[] {
+      const pattern = `%${query}%`
+      return searchMemories.all(pattern, pattern, pattern, limit) as MemoryEntry[]
+    },
+
+    // 程序性技能
+    insertSkill(name: string, trigger: string, content: string, status: 'pending' | 'approved' | 'rejected'): number {
+      const result = insertSkill.run({ name, trigger, content, status, createdAt: Date.now(), approvedAt: null })
+      return result.lastInsertRowid as number
+    },
+    getSkillsByStatus(status: 'pending' | 'approved' | 'rejected'): SkillEntry[] {
+      return selectSkillsByStatus.all(status) as SkillEntry[]
+    },
+    getSkillById(id: number): SkillEntry | null {
+      const row = selectSkillById.get(id) as SkillEntry | undefined
+      return row ?? null
+    },
+    updateSkillStatus(id: number, status: 'pending' | 'approved' | 'rejected'): void {
+      const approvedAt = status === 'approved' ? Date.now() : null
+      updateSkillStatus.run({ id, status, approvedAt })
     },
 
     // 暴露底层数据库实例（供 archive.ts 等高级用法使用）

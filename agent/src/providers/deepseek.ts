@@ -46,7 +46,7 @@ export class DeepSeekProvider implements ModelProvider {
       getKey: () => this.getKey(),
       params: p,
     })
-    for await (const chunk of streamSSE(resp, { signal: p.signal })) {
+    for await (const chunk of streamSSE(resp, { signal: p.signal, onUsage: p.onUsage })) {
       yield chunk
     }
   }

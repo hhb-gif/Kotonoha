@@ -315,6 +315,9 @@ function stubDeps(): {
     prompt(): { accepted: boolean } {
       return { accepted: true }
     },
+    interrupt(): { ok: boolean } {
+      return { ok: true }
+    },
     history(): { events: { event: HistoryEvent }[] } {
       return { events: [] }
     },
@@ -393,6 +396,9 @@ function loadDeps(hub: EventHub): {
     const { buildDefaultTools } = require('./tools/registry') as {
       buildDefaultTools: () => import('./tools').Tool[]
     }
+    const { createSkillTool } = require('./tools/skills') as {
+      createSkillTool: (db: unknown) => import('./types').Tool
+    }
     const { buildSystemPrompt } = require('./core/context') as {
       buildSystemPrompt: (session: SessionRecord) => string
     }
@@ -413,13 +419,44 @@ function loadDeps(hub: EventHub): {
     const { buildDefaultMCP } = require('./mcp') as {
       buildDefaultMCP: (cwd?: string) => import('./mcp').MCPManager
     }
+    const { getTotalCost, getSessionCost, exportAllCostCsv } = require('./store/cost') as {
+      getTotalCost: (db: import('./store').Db) => {
+        totalCostUsd: number
+        totalTokens: number
+        bySession: Record<string, { sessionId: string; tokens: number; costUsd: number }>
+      }
+      getSessionCost: (db: import('./store').Db, sessionId: string) => {
+        sessionId: string
+        records: unknown[]
+        tokens: { prompt: number; completion: number }
+        costUsd: number
+      }
+      exportAllCostCsv: (db: import('./store').Db) => string
+    }
+    const { searchEvents } = require('./store/search') as {
+      searchEvents: (
+        db: import('./store').Db,
+        sessionId: string,
+        query: string,
+        limit?: number
+      ) => { id: number; sessionId: string; seq: number; payload: unknown; snippet?: string }[]
+    }
+    const { getTrajectory } = require('./tools/hooks') as {
+      getTrajectory: (
+        db: import('./store').Db,
+        sessionId: string
+      ) => { ts: number; tool: string; args: string; ok: boolean; error?: string; sessionId: string }[]
+    }
 
     const db = openDb(dataDir) as import('./store').Db
     const secrets = openSecrets(dataDir)
     const store = buildDefaultStore(dataDir)
     const auth = buildDefaultAuth(secrets, (frame) => hub.broadcast(frame))
     const providers = buildDefaultRegistry((ref) => secrets.get(ref)) as import('./providers').ProviderRegistry
-    const tools = buildDefaultTools() as import('./types').Tool[]
+    // execute_skill 换成带 db 的版本（内置 polish/storybeat + approved 自定义技能）
+    const tools = (buildDefaultTools() as import('./types').Tool[]).map((t) =>
+      t.def.name === 'execute_skill' ? createSkillTool(db) : t
+    )
     const mcp = buildDefaultMCP()
 
     const ops: RpcHandlerContext['ops'] = {
@@ -463,6 +500,25 @@ function loadDeps(hub: EventHub): {
           status: s.status,
           tools: s.tools.map((t) => t.def.name),
         })),
+      // C-memory2：语义记忆 + 程序性技能（走 db 已就绪接口）
+      listMemories: (sessionId?: string) =>
+        sessionId ? db.getMemoriesBySession(sessionId) : db.searchMemories('', 100),
+      searchMemories: (query, limit) => db.searchMemories(query, limit),
+      listSkills: (status) => db.getSkillsByStatus(status),
+      approveSkill: (id) => {
+        db.updateSkillStatus(id, 'approved')
+        return db.getSkillById(id)
+      },
+      rejectSkill: (id) => {
+        db.updateSkillStatus(id, 'rejected')
+        return db.getSkillById(id)
+      },
+      // E-ops：成本统计 / 全文搜索 / 轨迹审计
+      getSessionCost: (id) => getSessionCost(db, id),
+      getTotalCost: () => getTotalCost(db),
+      exportCostCsv: () => exportAllCostCsv(db),
+      searchEvents: (sessionId, query, limit) => searchEvents(db, sessionId, query, limit),
+      getTrajectory: (id) => getTrajectory(db, id),
     }
 
     const engine = createEngine(
