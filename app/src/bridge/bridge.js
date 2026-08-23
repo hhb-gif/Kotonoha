@@ -51,7 +51,20 @@ const state = {
   pendingText: '',      // 当前 turn 的文本累积
   pendingPrompt: null,  // 当前 turn 的用户消息（429 降级后重试用）
   turnWatchdog: null,   // 发送后等待 turn/start 的超时器（防界面停留）
+  degradedTimer: null,  // 降级后「无后续 chunk 则按错误处理」的 3s 兜底定时器
   pendingApproval: null, // 待用户裁决的越界审批（{ rpcId, sessionId, approvalId, callId, toolName, reason, timer }）
+}
+
+// 降级兼容常量：收到 degraded 帧后若 3s 内无任何新 chunk，
+// 说明后端以 degraded 作为最终 finish（无 fallback 重试流），按错误处理复位界面
+const DEGRADED_TIMEOUT_MS = 3000
+
+/** 清除降级兜底定时器（后续有流式 chunk / 正常 finish / turn 结束时调用）。 */
+function clearDegradedTimer() {
+  if (state.degradedTimer) {
+    clearTimeout(state.degradedTimer)
+    state.degradedTimer = null
+  }
 }
 
 // ---- 事件总线 ----
@@ -245,6 +258,8 @@ function handleSessionEvent(ev) {
     case 'assistant/chunk': {
       const chunk = ev.data?.chunk
       if (!chunk) return
+      // 任何新 chunk 都证明降级后仍在流式（fallback 重试成功）→ 取消 3s 兜底定时器
+      clearDegradedTimer()
       if (chunk.type === 'text-delta') {
         state.pendingText += chunk.text
         emit({ type: 'model', delta: chunk.text })
@@ -260,6 +275,7 @@ function handleSessionEvent(ev) {
     }
 
     case 'turn/end':
+      clearDegradedTimer()
       if (state.turnWatchdog) {
         clearTimeout(state.turnWatchdog)
         state.turnWatchdog = null
@@ -275,14 +291,33 @@ function handleSessionEvent(ev) {
 async function handleFinish(reason) {
   if (!reason) return
   if (reason.kind === 'stop') {
+    clearDegradedTimer()
     const text = state.pendingText
     state.pendingText = ''
     emit({ type: 'model:done', text, name: CHARACTERS.kotonoha.name })
   } else if (reason.kind === 'error') {
+    clearDegradedTimer()
     state.pendingText = ''
     await handleTurnError(reason)
+  } else if (reason.kind === 'degraded') {
+    // 降级帧：主 provider 失败 → 已切 fallback 重试整个流。
+    // 不结束对话、不发 model:done、不清 busy（保持等待状态，后续应有 text-delta）。
+    emit({ type: 'degraded', from: reason.from, to: reason.to, message: reason.message || '' })
+    // 兼容「degraded 作为最终 finish」的后端实现：3s 内无新 chunk 则按错误处理复位界面
+    state.degradedTimer = setTimeout(() => {
+      state.degradedTimer = null
+      if (!state.busy) return
+      state.busy = false
+      state.pendingText = ''
+      state.pendingPrompt = null
+      console.warn('[bridge] 降级后 3s 无后续响应，按错误处理复位')
+      emit({ type: 'error', message: `模型降级后无响应（${reason.from || '?'} → ${reason.to || '?'}）` })
+      emit({ type: 'status', state: 'ready' })
+    }, DEGRADED_TIMEOUT_MS)
   }
   // reason.kind === 'tool-calls'：工具调用后还会继续出 block，保持 thinking，不动
+  // 注：tool-calls 分支不主动清 degradedTimer——若降级后紧跟工具调用，
+  // 后续 text-delta/finish 到来时会在 chunk 入口统一清除。
 }
 
 async function handleTurnError(reason) {
@@ -764,6 +799,16 @@ export async function getCostStats() {
   }
 }
 
+/** 降级记录（stats.degradations，M4 后端实现中）：value { degradations:[{ts, from, to, reason}] }。 */
+export async function getDegradations() {
+  try {
+    const value = await api('stats.degradations', {})
+    return { ok: true, degradations: value?.degradations || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
 /** 语义记忆列表（memory.list）：payload { sessionId? } → value { memories:[...] }。 */
 export async function listMemories(sessionId) {
   try {
@@ -867,6 +912,7 @@ export default {
   searchSession,
   interruptSession,
   getCostStats,
+  getDegradations,
   listMemories,
   listSkills,
   approveSkill,

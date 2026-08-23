@@ -90,3 +90,5 @@ export * from './archive'
 // E-ops（M4-4.1 成本 / M3-3.3 全文搜索）
 export * from './cost'
 export * from './search'
+// M4-4.2 降级记录
+export * from './degradations'

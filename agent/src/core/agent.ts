@@ -8,6 +8,7 @@ import type {
   Chunk,
   ChatMessage,
   EngineDeps,
+  ModelProvider,
   SessionEvent,
   SessionRecord,
   ToolResult,
@@ -17,7 +18,12 @@ import { buildSystemPrompt, historyToChatMessages } from './context'
 import { createDefaultHooks, runToolWithHooks, type Hook, type HookRegistry } from '../tools/hooks'
 import { resolveToolsets, DEFAULT_ACTIVE_TOOLSETS } from '../tools/toolsets'
 import { recordCost } from '../store/cost'
+import { recordDegradation } from '../store/degradations'
 import { estimateCost } from '../providers/cost'
+import { executeWithFallback } from '../providers/fallback'
+
+// 降级链参数：60s 无 chunk 视为超时切换；maxRetries=0 失败即切下一家（不原地重试）
+const FALLBACK_TIMEOUT_MS = 60_000
 
 // 单轮内待执行的工具调用（ProviderChunk['tool-call'] 的投影）
 interface PendingCall {
@@ -69,6 +75,13 @@ export class TurnRunner {
     if (!provider) {
       throw new Error(`provider 不存在: ${session.provider}`)
     }
+    // M4 降级链：主 provider 恒在首位（用户选择优先）；fallback 取注册表链中
+    // 其它 provider，且健康检查不可用的临时剔除（无健康模块时全部保留）
+    const fallbackChain = this.deps.providers.getFallbackChain?.() ?? []
+    const fallbackProviders = fallbackChain
+      .filter((id) => id !== session.provider && this.deps.providers.isHealthy?.(id) !== false)
+      .map((id) => this.deps.providers.get(id))
+      .filter((p): p is ModelProvider => p !== undefined)
     // 渐进披露：先按 check_fn 门控（环境可用性）过滤，再按会话激活工具集过滤，
     // 只把当前可用的工具 schema 交给模型
     const checkCtx = { cwd: session.cwd, sessionId: session.id }
@@ -106,18 +119,38 @@ export class TurnRunner {
         const calls: PendingCall[] = []
         let done = false
 
-        for await (const chunk of provider.streamChat({
+        // M4：streamChat 包 executeWithFallback（有降级链时）
+        // 触发条件：网络错误 / HTTP 5xx / 429 / 流异常中断 / 60s 无 chunk 超时
+        // 不触发：400 类业务错误（参数错，切换无用 → 直接报错）
+        // 切换不污染 session.provider（持久值保持用户选择，仅本次 turn 用降级 provider）
+        const streamParams = {
           model: session.model,
           messages,
           tools: toolDefs,
           signal,
           thinking: { enabled: true, effort: 'medium' },
           // 流尾 usage 回调：累积本轮 token 用量（供应商不支持时静默不触发）
-          onUsage: (u) => {
+          onUsage: (u: { promptTokens: number; completionTokens: number }) => {
             turnPromptTokens += u.promptTokens
             turnCompletionTokens += u.completionTokens
           },
-        })) {
+        }
+        const stream =
+          fallbackProviders.length > 0
+            ? executeWithFallback(
+                [provider, ...fallbackProviders],
+                streamParams,
+                (ctx) => {
+                  // 切换发生（不重试且指向另一家）→ 广播 degraded 帧 + 落库
+                  if (ctx.nextProviderId && ctx.nextProviderId !== ctx.providerId) {
+                    this.onDegraded(ctx.providerId, ctx.nextProviderId, ctx.error.message)
+                  }
+                },
+                { timeoutMs: FALLBACK_TIMEOUT_MS, maxRetries: 0 }
+              )
+            : provider.streamChat(streamParams)
+
+        for await (const chunk of stream) {
           // 中断检查：收到任意 chunk 后若已 abort → 立即停止本轮
           this.throwIfAborted(signal)
           switch (chunk.kind) {
@@ -328,5 +361,21 @@ export class TurnRunner {
 
   private emitChunk(chunk: Chunk): void {
     this.emit({ type: 'assistant/chunk', data: { chunk } })
+  }
+
+  /**
+   * M4 降级通知：广播 degraded 帧（前端 bridge 识别后 toast「已降级到 xx」）
+   * + 落库 settings 表 degradations（供 stats.degradations 查询）。
+   * 仅通知，不改变 turn 流程：后续 chunk 来自降级 provider，turn 仍以 stop/error 收尾。
+   */
+  private onDegraded(from: string, to: string, reason: string): void {
+    console.warn(`[agent] degraded: ${from} → ${to} (${reason.slice(0, 120)})`)
+    this.emitChunk({ type: 'finish', reason: { kind: 'degraded', from, to, message: reason } })
+    try {
+      recordDegradation(this.deps.db, { from, to, reason })
+    } catch (e) {
+      // 落库失败不阻断 turn（仅记录告警）
+      console.warn('[agent] degradation record failed:', (e as Error).message)
+    }
   }
 }

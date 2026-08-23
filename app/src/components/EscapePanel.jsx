@@ -265,6 +265,9 @@ export default function EscapePanel({
   const [costLoading, setCostLoading] = useState(false)
   const [trajectory, setTrajectory] = useState(null)
   const [trajectoryLoading, setTrajectoryLoading] = useState(false)
+  // 统计页：降级记录（stats.degradations，M4 后端实现中）
+  const [degradations, setDegradations] = useState(null)
+  const [degradationsLoading, setDegradationsLoading] = useState(false)
 
   const showMsg = useCallback((msg) => {
     setToast(msg)
@@ -460,6 +463,27 @@ export default function EscapePanel({
       alive = false
     }
   }, [open, tab, context?.sessionId])
+
+  // 打开统计页时拉取降级记录（stats.degradations，M4 后端实现中）
+  useEffect(() => {
+    if (!open || tab !== 'stats') return
+    let alive = true
+    setDegradationsLoading(true)
+    // TODO(M4): 后端 stats.degradations 合入前返回 null，界面显示接口未就绪
+    const p = bridge.getDegradations ? bridge.getDegradations() : Promise.resolve(null)
+    p.then((res) => {
+      if (alive) setDegradations(res?.ok ? res.degradations || [] : null)
+    })
+      .catch(() => {
+        if (alive) setDegradations(null)
+      })
+      .finally(() => {
+        if (alive) setDegradationsLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, tab])
 
   // 打开凭据页时拉取审批规则（rules.get，只读展示）
   useEffect(() => {
@@ -1569,6 +1593,47 @@ export default function EscapePanel({
                     )
                   ) : (
                     <div className="ep-empty">轨迹接口未就绪（等待 bridge 合入）</div>
+                  )}
+                </div>
+
+                <div className="ep-card">
+                  <h3 className="ep-card-title">降级记录</h3>
+                  {degradationsLoading ? (
+                    <div className="ep-model-loading">读取中…</div>
+                  ) : degradations ? (
+                    degradations.length ? (
+                      <details className="ep-details">
+                        <summary className="ep-details-summary">
+                          共 {degradations.length} 条降级（点击展开）
+                        </summary>
+                        <div className="ep-degradations-list">
+                          {degradations.map((d, i) => {
+                            const ts = d.ts || d.time || d.timestamp || d.createdAt || null
+                            return (
+                              <div key={d.id || i} className="ep-degradation-item">
+                                <div className="ep-degradation-head">
+                                  {ts ? (
+                                    <span className="ep-degradation-time ep-mono">
+                                      {formatTime(ts)}
+                                    </span>
+                                  ) : null}
+                                  <span className="ep-degradation-route ep-mono">
+                                    {d.from || '?'} → {d.to || '?'}
+                                  </span>
+                                </div>
+                                {d.reason ? (
+                                  <span className="ep-degradation-reason">{d.reason}</span>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    ) : (
+                      <div className="ep-empty">暂无降级记录</div>
+                    )
+                  ) : (
+                    <div className="ep-empty">降级记录接口未就绪（等待 M4 后端合入）</div>
                   )}
                 </div>
               </section>

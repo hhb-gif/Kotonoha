@@ -1356,3 +1356,49 @@
   color: #8A8F98;
   word-break: break-all;
 }
+
+/* ---- 降级记录（details 折叠，M4）---- */
+.ep-degradations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 14px 14px;
+}
+
+.ep-degradation-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
+  background: rgba(10, 7, 20, 0.4);
+  border: 1px solid rgba(232, 201, 122, 0.18);
+  border-radius: 10px;
+}
+
+.ep-degradation-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-degradation-route {
+  flex: 1;
+  min-width: 0;
+  color: #e8c97a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-degradation-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #8A8F98;
+}
+
+.ep-degradation-reason {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8A8F98;
+  word-break: break-all;
+}

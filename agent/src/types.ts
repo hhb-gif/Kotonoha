@@ -67,11 +67,18 @@ export type SessionEvent =
   | { type: 'assistant/chunk'; data: { chunk: Chunk } }
   | { type: 'turn/end' }
 
+// finish 结束原因：stop/tool-calls/error 为既有语义；
+// degraded 为 M4 新增：主 provider 失败自动切降级链时的通知帧（turn 未结束，后续 chunk 来自降级 provider）
+export type FinishReason =
+  | { kind: 'stop' | 'tool-calls'; message?: string }
+  | { kind: 'error'; message?: string }
+  | { kind: 'degraded'; from: string; to: string; message?: string }
+
 export type Chunk =
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-delta' }
   | { type: 'tool-call-delta'; toolCall: { name: string } }
-  | { type: 'finish'; reason: { kind: 'stop' | 'error' | 'tool-calls'; message?: string } }
+  | { type: 'finish'; reason: FinishReason }
 
 // ---- 历史事件（session.history 返回，bridge historyToMessages 解析）----
 
@@ -257,6 +264,14 @@ export interface SkillEntry {
   approved_at: number | null
 }
 
+/** 降级记录（M4）：主 provider 失败切降级链的一次事件，落 settings 表 key `degradations` */
+export interface DegradationEntry {
+  ts: number
+  from: string
+  to: string
+  reason: string
+}
+
 export interface SecretsStore {
   get(ref: string): string | undefined
   has(ref: string): boolean
@@ -273,6 +288,10 @@ export interface EngineDeps {
     get(id: string): ModelProvider | undefined
     list(): ModelProvider[]
     defaultId(): string
+    // M4：降级链（未注入时无降级，行为与单一 provider 一致）
+    getFallbackChain?(): string[]
+    // M4：健康状态查询（未注入时视为可用；false = 从降级链临时剔除）
+    isHealthy?(id: string): boolean
   }
   tools: {
     // 同步列出（可传 checkCtx：同步 check_fn 立即生效，异步 check_fn 由 listAvailable 处理）
@@ -376,6 +395,9 @@ export interface RpcHandlerContext {
     getTrajectory?: (
       sessionId: string
     ) => { ts: number; tool: string; args: string; ok: boolean; error?: string; sessionId: string }[]
+    // M4（4.2 provider 可靠性）：降级记录 / 供应商健康状态
+    getDegradations?: () => DegradationEntry[]
+    getProviderHealth?: () => { id: string; name: string; healthy: boolean }[]
   }
 }
 

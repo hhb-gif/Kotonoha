@@ -272,6 +272,9 @@ export default function App() {
           return prev
         })
         showToast(ev.message)
+      } else if (ev.type === 'degraded') {
+        // 主 provider 失败，后端已切 fallback 重试：toast 提示，对话保持进行
+        showToast(`模型降级：${ev.from || '?'} → ${ev.to || '?'}`)
       } else if (ev.type === 'approval') {
         if (ev.pending) {
           // 待用户裁决：弹出审批 UI（允许一次 / 始终允许 / 拒绝）

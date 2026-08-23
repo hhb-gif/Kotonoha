@@ -365,6 +365,8 @@ async function loadDeps(hub: EventHub): Promise<{
   approver: RpcHandlerContext['approver']
   secrets: SecretsStore
   ops?: RpcHandlerContext['ops']
+  // M4：健康调度清理句柄（stub 模式下不存在）
+  healthStop?: () => void
 }> {
   try {
     // 并行 agent 交付的真实组装（store/providers/tools/auth/core/memory/mcp）
@@ -439,6 +441,20 @@ async function loadDeps(hub: EventHub): Promise<{
       }
       exportAllCostCsv: (db: import('./store').Db) => string
     }
+    const { listDegradations } = require('./store/degradations') as {
+      listDegradations: (db: import('./store').Db) => import('./types').DegradationEntry[]
+    }
+    const { HealthMonitor } = require('./providers/health') as {
+      HealthMonitor: new (
+        registry: import('./providers').ProviderRegistry
+      ) => {
+        checkAll: () => Promise<{ id: string; ok: boolean }[]>
+        isHealthy: (id: string) => boolean
+        getStatus: () => { id: string; name: string; healthy: boolean }[]
+        start: (intervalMs?: number) => void
+        stop: () => void
+      }
+    }
     const { searchEvents } = require('./store/search') as {
       searchEvents: (
         db: import('./store').Db,
@@ -476,6 +492,8 @@ async function loadDeps(hub: EventHub): Promise<{
     const store = buildDefaultStore(dataDir)
     const auth = buildDefaultAuth(secrets, (frame) => hub.broadcast(frame))
     const providers = buildDefaultRegistry((ref) => secrets.get(ref)) as import('./providers').ProviderRegistry
+    // M4：Provider 健康监控（内存可用状态；不可用者从降级链临时剔除）
+    const health = new HealthMonitor(providers)
     // 注册表实例：list({checkCtx})/listAvailable/get 满足 EngineDeps.tools 契约（check_fn 门控）
     const registry = new ToolRegistry()
     registry.registerAll(buildDefaultTools(), { source: 'default' })
@@ -584,6 +602,9 @@ async function loadDeps(hub: EventHub): Promise<{
       exportCostCsv: () => exportAllCostCsv(db),
       searchEvents: (sessionId, query, limit) => searchEvents(db, sessionId, query, limit),
       getTrajectory: (id) => getTrajectory(db, id),
+      // M4：降级记录 / 供应商健康状态
+      getDegradations: () => listDegradations(db),
+      getProviderHealth: () => health.getStatus(),
     }
 
     const engine = createEngine(
@@ -593,6 +614,9 @@ async function loadDeps(hub: EventHub): Promise<{
           get: (id: string) => providers.get(id),
           list: () => providers.list(),
           defaultId: () => providers.defaultId(),
+          // M4：降级链 + 健康状态注入（agent.ts 据此构建降级链）
+          getFallbackChain: () => providers.getFallbackChain(),
+          isHealthy: (id: string) => health.isHealthy(id),
         },
         tools: registry,
         approver: auth.engine,
@@ -602,7 +626,9 @@ async function loadDeps(hub: EventHub): Promise<{
       },
       { dataDir, extraHooks: plugins.hooks }
     )
-    return { engine, approver: auth.engine, secrets, ops }
+    // M4：启动健康调度（立即跑一次 + 每 10 分钟），返回 stop 供关闭清理
+    health.start(10 * 60 * 1000)
+    return { engine, approver: auth.engine, secrets, ops, healthStop: () => health.stop() }
   } catch (e) {
     console.warn('[agent] 后端模块未就绪，以内存 stub 运行（骨架模式）:', (e as Error).message)
     return stubDeps()
@@ -612,7 +638,7 @@ async function loadDeps(hub: EventHub): Promise<{
 export async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? 3080)
   const hub = makeEventHub()
-  const { engine, approver, secrets, ops } = await loadDeps(hub)
+  const { engine, approver, secrets, ops, healthStop } = await loadDeps(hub)
   const { server } = startServer({ engine, approver, secrets, hub, port, ops })
   server.once('error', (e) => {
     console.error(`[agent] failed to listen on :${port}`, e)
@@ -621,6 +647,14 @@ export async function main(): Promise<void> {
   server.once('listening', () => {
     console.log(`[agent] listening on :${port}`)
   })
+  // 优雅退出：停健康调度（其 setInterval 会阻止进程退出）后关服务
+  const shutdown = (): void => {
+    healthStop?.()
+    server.close()
+    process.exit(0)
+  }
+  process.once('SIGINT', shutdown)
+  process.once('SIGTERM', shutdown)
 }
 
 void main()

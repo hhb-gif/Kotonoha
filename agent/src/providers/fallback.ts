@@ -32,11 +32,14 @@ const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_RETRIES = 1
 
 /**
- * 判断错误是否可重试
+ * 判断错误是否可重试（可重试 → 重试当前 provider 或切换到下一家）
+ * 不可重试（如 HTTP 400 参数错误）→ 切换无用，直接终止整个降级链
  */
 function isRetryableError(error: Error, retryCodes: number[]): boolean {
   // 网络错误 / AbortError / 超时
   if (error.name === 'AbortError' || error.name === 'TimeoutError') return true
+  // 流异常中断（未收到 done 就结束）：视为可切换
+  if (error.name === 'StreamInterrupt') return true
   // HTTP 状态码错误
   const match = error.message.match(/HTTP (\d{3})/)
   if (match) {
@@ -75,9 +78,9 @@ export async function* executeWithFallback(
     let attempt = 0
 
     while (attempt <= maxRetries) {
-      // 创建带超时的 AbortSignal
+      // 创建带超时的 AbortSignal（每次收到 chunk 重置 → idle 超时语义：N 秒无 chunk 即中断）
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+      let timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
       // 合并外部 signal
       const signal = params.signal
@@ -88,10 +91,22 @@ export async function* executeWithFallback(
         // 尝试流式调用
         const stream = provider.streamChat({ ...params, signal })
         let hasYielded = false
+        let lastKind: string | null = null
 
         for await (const chunk of stream) {
           hasYielded = true
+          lastKind = chunk.kind
+          // idle 超时：收到 chunk 即重置计时器（yield 前重置，消费者处理时间不计入）
+          clearTimeout(timeoutId)
+          timeoutId = setTimeout(() => controller.abort(), timeoutMs)
           yield chunk
+        }
+
+        // 流提前结束且未收到 done → 视为流异常中断（可重试，切换下一家）
+        if (hasYielded && lastKind !== 'done') {
+          const err = new Error('provider 流异常结束（未收到 done）')
+          err.name = 'StreamInterrupt'
+          throw err
         }
 
         // 成功完成，清理并返回
@@ -100,7 +115,8 @@ export async function* executeWithFallback(
         // 没有 yield 任何 chunk 视为失败，尝试重试
       } catch (error) {
         lastError = error as Error
-        const willRetry = attempt < maxRetries && isRetryableError(lastError, retryStatusCodes)
+        const retryable = isRetryableError(lastError, retryStatusCodes)
+        const willRetry = attempt < maxRetries && retryable
         const nextProvider = providers[i + 1]
 
         logger({
@@ -114,6 +130,10 @@ export async function* executeWithFallback(
 
         clearTimeout(timeoutId)
 
+        if (!retryable) {
+          // 业务错误（400 等）：切换无用，立即终止整个降级链
+          throw lastError
+        }
         if (!willRetry) {
           // 不再重试当前 provider，跳出内层循环进入下一个 provider
           break

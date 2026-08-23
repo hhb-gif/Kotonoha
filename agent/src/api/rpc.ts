@@ -353,6 +353,18 @@ const routes: Record<string, Route> = {
     if (!ctx.ops?.getTrajectory) throw new Error('session.trajectory 未注入')
     return { trajectory: ctx.ops.getTrajectory(sessionId) }
   },
+
+  // ---- M4（4.2 provider 可靠性）：降级记录 / 供应商健康状态 ----
+
+  'stats.degradations': (ctx) => {
+    if (!ctx.ops?.getDegradations) throw new Error('stats.degradations 未注入')
+    return { degradations: ctx.ops.getDegradations() }
+  },
+
+  'providers.health': (ctx) => {
+    if (!ctx.ops?.getProviderHealth) throw new Error('providers.health 未注入')
+    return { providers: ctx.ops.getProviderHealth() }
+  },
 }
 
 // ---- 入口 ----
