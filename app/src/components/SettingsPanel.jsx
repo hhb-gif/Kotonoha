@@ -67,14 +67,21 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
       if (stale) return
       setModelInfo(info)
       setModelState(info ? 'ready' : 'error')
-      const cur = info?.current
-      if (cur?.provider) {
-        const p = provs.find((x) => x.id === cur.provider)
-        if (p) {
-          setProvider(cur.provider)
-          const list = p.models || []
-          if (list.some((m) => m.id === cur.model)) setModel(cur.model)
-        }
+      const cur = info?.current || {}
+      // 决定初始 provider：当前会话的 provider（若在目录内）→ defaultId → 第一个 provider
+      let initProvider = ''
+      if (cur.provider && provs.some((x) => x.id === cur.provider)) initProvider = cur.provider
+      if (!initProvider) {
+        const defId = lp?.defaultId || provs[0]?.id
+        if (defId && provs.some((x) => x.id === defId)) initProvider = defId
+        else if (provs.length) initProvider = provs[0].id
+      }
+      // 模型下拉默认选中当前模型；不在列表则默认选第一个（新用户开箱即用）
+      if (initProvider) {
+        setProvider(initProvider)
+        const list = provs.find((x) => x.id === initProvider)?.models || []
+        if (list.some((m) => m.id === cur.model)) setModel(cur.model)
+        else if (list.length > 0) setModel(list[0].id)
       }
     })()
     return () => {
@@ -144,13 +151,19 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
     }
     // ② 切换模型（选中了模型才切）
     if (model) {
+      const hasSession = !!(window.__bridgeDebug?.state?.sessionId)
       const mr = await bridge.selectModel(provider, model)
-      if (!mr.ok) {
+      if (mr.ok) {
+        parts.push(`已切换 ${provider}/${model}`)
+      } else if (mr.error === '会话未就绪' || !hasSession) {
+        // 新用户尚无会话：selectModel 会因「会话未就绪」失败。
+        // 这里仅保存密钥，模型选择在进入对话后生效，不报错。
+        parts.push('密钥已保存，模型将在进入对话后生效')
+      } else {
         setKeyBusy(false)
         showNotice('err', `模型切换失败：${mr.error}`)
         return
       }
-      parts.push(`已切换 ${provider}/${model}`)
     }
     setKeyBusy(false)
     setKeyRef(savedRef)
@@ -239,8 +252,8 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
             {modelState === 'ready' && (
               <div className="settings-model-current">
                 {current ? (
-                  <span>
-                    当前：{current.provider} / {current.model}
+                  <span className="settings-model-chip">
+                    当前会话 · {current.provider} / {current.model}
                     {current.reasoningEffort ? `（${current.reasoningEffort}）` : ''}
                   </span>
                 ) : (
@@ -278,7 +291,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               disabled={!provider || models.length === 0}
             >
               {!provider || models.length === 0 ? (
-                <option value="">无可用模型</option>
+                <option value="">模型由本地服务提供</option>
               ) : (
                 models.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -311,6 +324,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               {keyRef ? (keyConfigured ? '（已配置）' : '（未配置）') : ''}
             </span>
           </div>
+          <div className="settings-key-note">密钥只存在本机（加密存储），不会上传。</div>
         </section>
 
         {notice && (

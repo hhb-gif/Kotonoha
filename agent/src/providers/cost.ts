@@ -15,10 +15,6 @@ export const PRICING_TABLE: Record<string, ModelPricing> = {
   'deepseek-official:deepseek-chat':     { prompt: 0.00014, completion: 0.00028 },
   'deepseek-official:deepseek-reasoner': { prompt: 0.00055, completion: 0.00219 },
 
-  // DeepSeek V4 系列 (当前列表模型)
-  'deepseek-official:deepseek-v4-flash': { prompt: 0.00014, completion: 0.00028 },
-  'deepseek-official:deepseek-v4':       { prompt: 0.00055, completion: 0.00219 },
-
   // Agnes AI (图像/视频生成，按次计费而非 token，此处仅占位)
   'agnes:agnes-image-2.1-flash': { prompt: 0, completion: 0 },
   'agnes:agnes-video-v2.0':      { prompt: 0, completion: 0 },

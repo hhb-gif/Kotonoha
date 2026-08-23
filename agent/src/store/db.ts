@@ -51,7 +51,7 @@ export function openDb(dir: string): Db {
       cwd TEXT NOT NULL,
       label TEXT NOT NULL DEFAULT '对话',
       provider TEXT NOT NULL DEFAULT 'deepseek-official',
-      model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
+      model TEXT NOT NULL DEFAULT 'deepseek-chat',
       created_at INTEGER NOT NULL,
       last_active_at INTEGER NOT NULL,
       archived_at INTEGER NOT NULL DEFAULT 0

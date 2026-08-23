@@ -163,7 +163,7 @@ export class DefaultMemoryEngine implements MemoryEngine {
       cwd: projectRoot,
       label: '对话',
       provider: this.providers.defaultId(),
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-chat',
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     }

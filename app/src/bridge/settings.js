@@ -1,33 +1,28 @@
 // ============================================================
-// settings.js —— 设置面板的桥接层：本地设置 + dsh 模型/凭据 RPC
+// settings.js —— 设置面板的桥接层：本地设置 + harness 模型/凭据 RPC
 //
 // 协议：与 bridge.js 相同的 Typert RPC（POST /api/<method>，
 // body { type:'client-request', rpcId, method, payload }，
 // 响应 result.ok 判断成败）。本模块自带一份 api() 拷贝，不改动 bridge.js。
 //
-// 探测依据（2026-08-19，dsh v0.1.0-rc.7，见 E:\Kotonoha\temp\probe-settings.mjs）：
-//   - session.models      payload { sessionId }
-//       → value { current:{provider,model,reasoningEffort?}, routable, groups:[{id,name,models:[...]}], failures:[...] }
-//   - llm.providers       payload {}
-//       → value { providers:[{provider,displayName,settingsNs,settingsPath,active,declared?}] }
-//   - credentials.describe payload { refs: string[] }   ← refs 为必填数组，{} 会报 bad-request
-//       → value { credentials:{ <REF>:{configured,source?,writable} } }（永远不含真实值）
-//   - credentials.set     payload { ref, value } → value {}（失败时 error credential-rejected）
-//   - credentials.unset   payload { ref }        → value {}（幂等）
-//   - ref 命名：环境变量名风格（DEEPSEEK_API_KEY / OPENCODE_API_KEY）。
-//     官方 UI 的 deriveKeyRef：`${provider.toUpperCase().replace(/[^A-Z0-9]+/g,'_')}_API_KEY`；
-//     若 settings 配置里显式写了 apiKeyEnv 则优先用那个值。
+// harness 真实端点（自研 Agent Harness，2026-08-23 对齐）：
+//   - providers.list   payload {}  → value { defaultId, providers:[{id,name,capabilities?,models:[{id,name?}]}] }
+//   - session.list     payload {}  → value [{sessionId,cwd,label,provider,model,...}]
+//   - session.selectModel payload { sessionId, provider, model } → value { ok }
+//   - credentials.describe payload { refs: string[] } → value { refs:[{ref,configured,source}] }
+//   - credentials.set   payload { ref, value } → value {}
+//   - credentials.unset payload { ref } → value {}
 // ============================================================
 
 const SETTINGS_KEY = 'kotonoha:settings'
-const SAVE_KEY = 'kotonoha:save' // 与 bridge.js 的存档位一致，用于取 sessionId
 const BASE_CWD = 'E:\\Kotonoha'
 
-// ---- 已知 provider → 凭据 ref 的显式映射（探测到的实际配置键）----
+// ---- 已知 provider → 凭据 ref 的显式映射 ----
 const KNOWN_REF = {
   'deepseek-official': 'DEEPSEEK_API_KEY',
   deepseek: 'DEEPSEEK_API_KEY',
-  opencode: 'OPENCODE_API_KEY',
+  agnes: 'AGNES_API_KEY',
+  ollama: 'OLLAMA_API_KEY',
 }
 
 // ---- 默认设置 ----
@@ -88,50 +83,37 @@ export function setSettings(partial) {
   return next
 }
 
-/** 取当前会话的 sessionId（复用 bridge.js 的存档位，缺失时回退 session.list / session.create）。 */
-async function resolveSessionId() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY)
-    if (raw) {
-      const slot = JSON.parse(raw)
-      if (slot?.sessionId) return slot.sessionId
-    }
-  } catch {
-    /* 存档损坏则走回退 */
-  }
-  const list = await api('session.list', {})
-  const items = list?.items || []
-  if (items.length > 0) return items[0].sessionId
-  const created = await api('session.create', { cwd: BASE_CWD })
-  return created.sessionId
-}
-
-// ---- 模型信息 ----
+// ---- 模型信息（harness providers.list + session.list）----
 /**
- * 读取当前会话的模型信息 + 可配置 provider 目录。
+ * 读取当前会话模型信息 + provider 目录（纯 harness API）。
  * @returns {Promise<{ current, groups, providers }|null>}
- *   current  当前会话模型选择 { provider, model, reasoningEffort? }
- *   groups   session.models 的 provider 分组 [{ id, name, models }]
- *   providers llm.providers 的可配置 provider 视图 [{ provider, displayName, settingsNs, settingsPath, active }]
- * 任一步解析失败返回 null 并 console.error。
+ *   current   最近活跃会话的 { provider, model }（无会话时为默认 provider）
+ *   groups    provider 分组视图 [{ id, name, models }]（兼容旧结构，供 UI 复用）
+ *   providers providers.list 原始数组
  */
 export async function getModelInfo() {
   try {
-    const sessionId = await resolveSessionId()
-    const models = await api('session.models', { sessionId })
-    let providers = []
+    const lp = await api('providers.list', {})
+    const providers = lp?.providers || []
+    const defaultId = lp?.defaultId || providers[0]?.id || ''
+    // 最近活跃会话的模型选择
+    let current = { provider: defaultId, model: '' }
     try {
-      const llm = await api('llm.providers', {})
-      providers = llm?.providers || []
-    } catch (err) {
-      console.error('[settings] llm.providers failed:', err.message)
-      // 不致命：groups 已足够提供 provider 下拉
+      const list = await api('session.list', {})
+      const sessions = Array.isArray(list) ? list : list?.items || []
+      if (sessions.length > 0) {
+        const top = sessions[0]
+        current = { provider: top.provider || defaultId, model: top.model || '' }
+      }
+    } catch {
+      /* 无会话，用默认 */
     }
-    return {
-      current: models?.current || null,
-      groups: models?.groups || [],
-      providers,
-    }
+    const groups = providers.map((p) => ({
+      id: p.id,
+      name: p.name || p.id,
+      models: p.models || [],
+    }))
+    return { current, groups, providers }
   } catch (err) {
     console.error('[settings] getModelInfo failed:', err.message)
     return null
@@ -139,51 +121,22 @@ export async function getModelInfo() {
 }
 
 // ---- 凭据 ref 解析 ----
-/** provider 路由 id → 环境变量名风格 ref（官方 UI 同款规则）。 */
+/** provider 路由 id → 环境变量名风格 ref。 */
 export function deriveKeyRef(provider) {
+  const known = KNOWN_REF[String(provider || '')]
+  if (known) return known
   return `${String(provider || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 }
 
-/**
- * 解析 provider 对应的凭据 ref：
- * 1) KNOWN_REF 显式映射（当前已配置的 deepseek-official / opencode）
- * 2) 该 provider 在 settings 配置里的 apiKeyEnv 字段
- * 3) 兜底 deriveKeyRef(provider)
- * @param {string} provider provider 路由 id
- * @returns {Promise<string>}
- */
+/** 解析 provider 对应的凭据 ref（KNOWN_REF 优先，兜底 deriveKeyRef）。 */
 export async function getCredentialRef(provider) {
-  const p = String(provider || '')
-  if (KNOWN_REF[p]) return KNOWN_REF[p]
-  const providers = await safeProviders()
-  const entry = providers.find((x) => x.provider === p || x.displayName === p)
-  if (entry) {
-    try {
-      const desc = await api('settings.describe', {})
-      const ns = (desc.namespaces || []).find((n) => n.ns === entry.settingsNs)
-      let node = ns?.value
-      for (const seg of entry.settingsPath || []) node = node?.[seg]
-      if (node && typeof node.apiKeyEnv === 'string' && node.apiKeyEnv) return node.apiKeyEnv
-    } catch (err) {
-      console.error('[settings] resolve apiKeyEnv failed:', err.message)
-    }
-  }
-  return deriveKeyRef(p)
-}
-
-async function safeProviders() {
-  try {
-    const llm = await api('llm.providers', {})
-    return llm?.providers || []
-  } catch {
-    return []
-  }
+  return deriveKeyRef(provider)
 }
 
 // ---- 写入密钥 ----
 /**
- * 通过 dsh credentials.set 写入 provider 的 API 密钥。
- * @param {string} provider provider 路由 id（如 'deepseek-official' / 'opencode'）
+ * 通过 harness credentials.set 写入 provider 的 API 密钥。
+ * @param {string} provider provider 路由 id（如 'deepseek-official'）
  * @param {string} apiKey  API 密钥原文
  * @returns {Promise<{ ok:boolean, ref?:string, error?:string }>}
  */
@@ -202,7 +155,8 @@ export async function setApiKey(provider, apiKey) {
 export async function getCredentialState(ref) {
   try {
     const desc = await api('credentials.describe', { refs: [ref] })
-    return desc?.credentials?.[ref] || null
+    const entry = (desc?.refs || []).find((x) => x.ref === ref)
+    return entry || null
   } catch (err) {
     console.error('[settings] getCredentialState failed:', err.message)
     return null

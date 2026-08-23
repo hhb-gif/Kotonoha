@@ -15,6 +15,10 @@ import MainMenu from './components/MainMenu'
 import SelectScreen from './components/SelectScreen'
 import EscapePanel from './components/EscapePanel'
 import LogViewer from './components/LogViewer'
+import Onboarding from './components/Onboarding'
+
+// 首次使用引导标记：localStorage 存在即不再显示
+const ONBOARDING_KEY = 'kotonoha:onboarding-done'
 
 // 选择肢：本次仅预留骨架，不激活
 const DUMMY_CHOICES = []
@@ -99,6 +103,14 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [settings, setSettingsState] = useState(() => getSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 首次使用引导：localStorage 无标记时显示
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    try {
+      return !localStorage.getItem(ONBOARDING_KEY)
+    } catch {
+      return true
+    }
+  })
   // 越界审批弹窗（待用户选择：允许一次 / 始终允许 / 拒绝）
   const [approval, setApproval] = useState(null) // { rpcId, sessionId, approvalId, toolName, reason }
 
@@ -394,6 +406,22 @@ export default function App() {
     setSettingsState(setSettings(partial))
   }, [])
 
+  // ---- 首次使用引导：完成/跳过 → 写标记，不再显示 ----
+  const finishOnboarding = useCallback(() => {
+    try {
+      localStorage.setItem(ONBOARDING_KEY, '1')
+    } catch (err) {
+      console.error('[onboarding] write flag failed:', err)
+    }
+    setOnboardingOpen(false)
+  }, [])
+
+  // 引导「去设置」：完成引导并打开设置面板
+  const handleOnboardGoSettings = useCallback(() => {
+    finishOnboarding()
+    setSettingsOpen(true)
+  }, [finishOnboarding])
+
   // ---- 页面导航 ----
   const goMain = useCallback(() => {
     setEscOpen(false)
@@ -583,9 +611,9 @@ export default function App() {
     const last = ctx?.storyId ? stories.getStory(ctx.storyId) : null
     return (
       <div className="stage">
-        <Background src={`/assets/${settings.scene}.png`} />
+        <Background src={`assets/${settings.scene}.png`} />
         {settings.showCharacter !== false && (
-          <CharacterSprite src="/assets/character.png" name="言叶" />
+          <CharacterSprite src="assets/character.png" name="言叶" />
         )}
         <MainMenu
           onNewGame={() => goSelect('new')}
@@ -602,6 +630,11 @@ export default function App() {
           settings={settings}
           onChange={handleSettingsChange}
         />
+        <Onboarding
+          open={onboardingOpen}
+          onFinish={finishOnboarding}
+          onGoSettings={handleOnboardGoSettings}
+        />
         <ApprovalModal approval={approval} onChoose={handleApprovalChoose} />
         {toast && <div className="toast">{toast}</div>}
       </div>
@@ -611,7 +644,7 @@ export default function App() {
   if (page === 'select') {
     return (
       <div className="stage">
-        <Background src={`/assets/${settings.scene}.png`} />
+        <Background src={`assets/${settings.scene}.png`} />
         <SelectScreen
           mode={selectMode}
           onPickSave={handlePickSave}
@@ -627,9 +660,9 @@ export default function App() {
   // ---- 对话界面 ----
   return (
     <div className="stage">
-      <Background src={`/assets/${settings.scene}.png`} />
+      <Background src={`assets/${settings.scene}.png`} />
       {settings.showCharacter !== false && (
-        <CharacterSprite src="/assets/character.png" name="言叶" />
+        <CharacterSprite src="assets/character.png" name="言叶" />
       )}
       <TopBar
         scene={SCENE_LABELS[settings.scene] || settings.scene}

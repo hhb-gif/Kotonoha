@@ -144,6 +144,21 @@ const routes: Record<string, Route> = {
     return { refs: ctx.secrets.describe(refs) }
   },
 
+  'credentials.set': (ctx, p) => {
+    const ref = str(p, 'ref')
+    const value = str(p, 'value')
+    if (!ref || !value) throw new Error('ref and value required')
+    ctx.secrets.set(ref, value, 'settings panel')
+    return {}
+  },
+
+  'credentials.unset': (ctx, p) => {
+    const ref = str(p, 'ref')
+    if (!ref) throw new Error('ref required')
+    ctx.secrets.remove(ref)
+    return {}
+  },
+
   'mcp.list': () => ({ servers: [] }),
 
   // ---- Round-2 扩展（依赖 ctx.ops；未注入时按 METHOD_NOT_FOUND 处理）----

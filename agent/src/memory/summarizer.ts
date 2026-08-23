@@ -75,7 +75,7 @@ async function callSummarizer(
   signal?: AbortSignal
 ): Promise<string> {
   const params: StreamParams = {
-    model: 'deepseek-v4-flash', // 使用小模型
+    model: 'deepseek-chat', // 使用小模型
     messages: [
       { role: 'system', content: '你是对话摘要助手，擅长从长对话中提取关键信息。' },
       { role: 'user', content: prompt },

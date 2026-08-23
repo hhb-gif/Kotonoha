@@ -305,7 +305,7 @@ function stubDeps(): {
         cwd,
         label: '对话',
         provider: 'deepseek-official',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-chat',
         createdAt: now,
         lastActiveAt: now,
       }
@@ -444,7 +444,7 @@ function loadDeps(hub: EventHub): {
         if (!provider) throw new Error('无可用 provider')
         return compressSessionStore(db, id, {
           keepRecent: opts.keepRecent,
-          summarizeModel: 'deepseek-v4-flash',
+          summarizeModel: 'deepseek-chat',
           maxTokens: 4096,
         }, provider)
       },

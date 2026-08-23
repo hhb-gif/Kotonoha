@@ -50,7 +50,7 @@ export function buildDefaultStore(dataDir: string, envSecret?: string): SessionS
 
   // 从 providers 获取默认小模型（用于压缩摘要）
   // 这里不直接依赖 providers，调用方需传入 provider 实例
-  const getDefaultSummarizeModel = (): string => 'deepseek-v4-flash'
+  const getDefaultSummarizeModel = (): string => 'deepseek-chat'
 
   return {
     // 基础

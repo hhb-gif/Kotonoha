@@ -26,7 +26,7 @@ const CHARACTERS = {
   kotonoha: {
     id: 'kotonoha',
     name: '言叶',
-    sprite: '/assets/character.png',
+    sprite: 'assets/character.png',
   },
 }
 
