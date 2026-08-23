@@ -1229,3 +1229,129 @@ body {
   from { opacity: 0; transform: translate(-50%, -50%) translateY(18px); }
   to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
 }
+
+/* ============ 越界审批弹窗 ============ */
+.appr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 4, 12, 0.6);
+  backdrop-filter: blur(4px);
+  animation: bg-fade-in 0.2s ease-out;
+}
+
+.appr-panel {
+  width: min(420px, 90vw);
+  padding: 22px 26px;
+  background: rgba(16, 12, 28, 0.96);
+  border: 1px solid rgba(232, 201, 122, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.65), 0 0 24px rgba(232, 201, 122, 0.12);
+  animation: settings-in 0.25s ease-out;
+}
+
+.appr-title {
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 5px;
+  color: #e8c97a;
+}
+
+.appr-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.appr-line + .appr-line {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.appr-label {
+  flex: 0 0 44px;
+  letter-spacing: 2px;
+  color: #8A8F98;
+}
+
+.appr-value {
+  flex: 1;
+  min-width: 0;
+  color: #EDEDEF;
+  word-break: break-all;
+}
+
+.appr-mono {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  color: #e8c97a;
+}
+
+.appr-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.appr-btn {
+  flex: 1;
+  padding: 10px 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.appr-btn:active {
+  transform: scale(0.97);
+}
+
+.appr-once {
+  color: #EDEDEF;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.appr-once:hover {
+  border-color: #e8c97a;
+  color: #e8c97a;
+}
+
+.appr-always {
+  color: #1a1326;
+  background: linear-gradient(90deg, #e8c97a, #d4b163);
+  border: 1px solid rgba(232, 201, 122, 0.8);
+  box-shadow: 0 0 12px rgba(232, 201, 122, 0.25);
+}
+
+.appr-always:hover {
+  filter: brightness(1.08);
+}
+
+.appr-deny {
+  color: #e0716f;
+  background: rgba(224, 113, 111, 0.08);
+  border: 1px solid rgba(224, 113, 111, 0.4);
+}
+
+.appr-deny:hover {
+  background: rgba(224, 113, 111, 0.16);
+}
+
+.appr-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8A8F98;
+}

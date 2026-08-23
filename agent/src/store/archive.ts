@@ -4,6 +4,7 @@
 // ============================================================
 
 import type { Db, SessionRecord } from '../types'
+import crypto from 'node:crypto'
 
 export interface ArchiveRecord {
   id: string
@@ -58,7 +59,7 @@ export function archiveSession(db: Db, sessionId: string): Promise<void> {
         throw new Error(`Session not found: ${sessionId}`)
       }
 
-      const sqliteDb = (db as any).db // 访问底层 better-sqlite3 实例
+      const sqliteDb = (db as any)._db // 访问底层 better-sqlite3 实例
       ensureArchiveTable(sqliteDb)
       migrateAddArchivedColumn(sqliteDb)
 
@@ -87,7 +88,7 @@ export function archiveSession(db: Db, sessionId: string): Promise<void> {
 export function unarchiveSession(db: Db, sessionId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      const sqliteDb = (db as any).db
+      const sqliteDb = (db as any)._db
       ensureArchiveTable(sqliteDb)
 
       const archive = selectArchive(sqliteDb).get(sessionId) as ArchiveRecord | undefined
@@ -109,17 +110,17 @@ export function unarchiveSession(db: Db, sessionId: string): Promise<void> {
 }
 
 export function listArchivedSessions(db: Db): SessionRecord[] {
-  const sqliteDb = (db as any).db
+  const sqliteDb = (db as any)._db
   ensureArchiveTable(sqliteDb)
 
-  const rows = selectAllArchives(sqliteDb).all() as ArchiveRecord[]
-  return rows.map((r) => JSON.parse(r.originalData) as SessionRecord)
+  const rows = selectAllArchives(sqliteDb).all() as { original_data: string }[]
+  return rows.map((r) => JSON.parse(r.original_data) as SessionRecord)
 }
 
 export function isArchived(db: Db, sessionId: string): boolean {
   const session = db.getSession(sessionId)
   if (!session) return false
-  const sqliteDb = (db as any).db
+  const sqliteDb = (db as any)._db
   const row = sqliteDb.prepare(`SELECT archived_at FROM sessions WHERE id = ?`).get(sessionId) as
     | { archived_at: number }
     | undefined

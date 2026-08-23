@@ -157,6 +157,7 @@ export interface StartServerDeps {
   secrets: SecretsStore
   hub: EventHub
   port?: number
+  ops?: RpcHandlerContext['ops']
 }
 
 function setCors(res: http.ServerResponse): void {
@@ -214,8 +215,8 @@ export function startServer(deps: StartServerDeps): {
   server: http.Server
   close: () => void
 } {
-  const { engine, approver, secrets, hub, port = 3080 } = deps
-  const rpcHandler = makeRpcHandler({ engine, approver, secrets })
+  const { engine, approver, secrets, hub, port = 3080, ops } = deps
+  const rpcHandler = makeRpcHandler({ engine, approver, secrets, ops })
 
   const server = http.createServer(async (req, res) => {
     setCors(res)
@@ -360,6 +361,7 @@ function loadDeps(hub: EventHub): {
   engine: SessionEngine
   approver: RpcHandlerContext['approver']
   secrets: SecretsStore
+  ops?: RpcHandlerContext['ops']
 } {
   try {
     // 并行 agent 交付的真实组装（store/providers/tools/auth/core/memory/mcp）
@@ -397,8 +399,19 @@ function loadDeps(hub: EventHub): {
     const { buildDefaultStore } = require('./store') as {
       buildDefaultStore: (dir: string, envSecret?: string) => import('./store').SessionStore
     }
+    const { compressSessionStore } = require('./store') as {
+      compressSessionStore: (
+        db: import('./store').Db,
+        sessionId: string,
+        opts: { keepRecent: number; summarizeModel: string; maxTokens: number },
+        provider: import('./providers').ModelProvider
+      ) => Promise<{ originalEvents: number; compressedEvents: number; summary: string }>
+    }
     const { buildDefaultMemory } = require('./memory') as {
       buildDefaultMemory: (deps: { db: import('./store').Db; providers: import('./providers').ProviderRegistry; tools: import('./types').Tool[] }) => import('./memory').MemoryEngine
+    }
+    const { buildDefaultMCP } = require('./mcp') as {
+      buildDefaultMCP: (cwd?: string) => import('./mcp').MCPManager
     }
 
     const db = openDb(dataDir) as import('./store').Db
@@ -407,6 +420,50 @@ function loadDeps(hub: EventHub): {
     const auth = buildDefaultAuth(secrets, (frame) => hub.broadcast(frame))
     const providers = buildDefaultRegistry((ref) => secrets.get(ref)) as import('./providers').ProviderRegistry
     const tools = buildDefaultTools() as import('./types').Tool[]
+    const mcp = buildDefaultMCP()
+
+    const ops: RpcHandlerContext['ops'] = {
+      listTools: () => tools.map((t) => ({ name: t.def.name, description: t.def.description })),
+      listProviders: async () =>
+        Promise.all(
+          providers.list().map(async (p) => ({
+            id: p.id,
+            name: p.name,
+            capabilities: (p as import('./providers').ModelProvider).capabilities,
+            models: await p.listModels(),
+          }))
+        ),
+      providerDefaultId: () => providers.defaultId(),
+      exportSession: (id, format) => store.exportSession(id, format),
+      importSession: async (data, format) => {
+        const rec = await store.importSession(data, format)
+        return { sessionId: rec.id }
+      },
+      compressSession: async (id, opts) => {
+        const provider = providers.get(providers.defaultId())
+        if (!provider) throw new Error('无可用 provider')
+        return compressSessionStore(db, id, {
+          keepRecent: opts.keepRecent,
+          summarizeModel: 'deepseek-v4-flash',
+          maxTokens: 4096,
+        }, provider)
+      },
+      archiveSession: (id) => store.archiveSession(id),
+      unarchiveSession: (id) => store.unarchiveSession(id),
+      listArchivedSessions: () => store.listArchivedSessions(),
+      isSessionArchived: (id) => store.isArchived(id),
+      getRules: () => auth.engine.getRules().map((r) => ({ tool: r.tool, level: r.level })),
+      setRules: (rules) => {
+        auth.engine.setRules(rules)
+      },
+      listMcpServers: () =>
+        mcp.listServers().map((s) => ({
+          id: s.id,
+          type: s.config.type,
+          status: s.status,
+          tools: s.tools.map((t) => t.def.name),
+        })),
+    }
 
     const engine = createEngine(
       {
@@ -427,7 +484,7 @@ function loadDeps(hub: EventHub): {
       },
       { dataDir }
     )
-    return { engine, approver: auth.engine, secrets }
+    return { engine, approver: auth.engine, secrets, ops }
   } catch (e) {
     console.warn('[agent] 后端模块未就绪，以内存 stub 运行（骨架模式）:', (e as Error).message)
     return stubDeps()
@@ -437,8 +494,8 @@ function loadDeps(hub: EventHub): {
 export function main(): void {
   const port = Number(process.env.PORT ?? 3080)
   const hub = makeEventHub()
-  const { engine, approver, secrets } = loadDeps(hub)
-  const { server } = startServer({ engine, approver, secrets, hub, port })
+  const { engine, approver, secrets, ops } = loadDeps(hub)
+  const { server } = startServer({ engine, approver, secrets, hub, port, ops })
   server.once('error', (e) => {
     console.error(`[agent] failed to listen on :${port}`, e)
     process.exit(1)

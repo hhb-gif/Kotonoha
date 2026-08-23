@@ -13,14 +13,12 @@ import { globTool } from './glob'
 import { grepTool } from './grep'
 import { taskTool } from './task'
 import { bashTool } from './bash'
+import { runCommandTool } from './terminal'
+import { gitStatusTool, gitCommitTool, gitLogTool } from './git'
+import { fetchUrlTool, webSearchTool } from './web'
+import { executeSkillTool } from './skills'
 
-// 保留原有工具导出（供其它模块按需引用）
-export { runCommandTool } from './terminal'
-export { gitStatusTool, gitCommitTool, gitLogTool } from './git'
-export { fetchUrlTool, webSearchTool } from './web'
-export { executeSkillTool } from './skills'
-
-// 7 核心工具：read_file, write_file, edit_file, glob, grep, task, bash
+// 全部工具（核心 7 + 遗留工具，供注册表/前端清单使用）
 export function buildDefaultTools(): Tool[] {
   return [
     readFileTool,
@@ -30,6 +28,13 @@ export function buildDefaultTools(): Tool[] {
     grepTool,
     taskTool,
     bashTool,
+    runCommandTool,
+    gitStatusTool,
+    gitCommitTool,
+    gitLogTool,
+    fetchUrlTool,
+    webSearchTool,
+    executeSkillTool,
   ]
 }
 

@@ -50,6 +50,7 @@ const state = {
   degraded: false,      // 是否已降级模型
   pendingText: '',      // 当前 turn 的文本累积
   pendingPrompt: null,  // 当前 turn 的用户消息（429 降级后重试用）
+  pendingApproval: null, // 待用户裁决的越界审批（{ rpcId, sessionId, approvalId, callId, toolName, reason, timer }）
 }
 
 // ---- 事件总线 ----
@@ -129,7 +130,23 @@ function connectWS() {
   ws.onerror = () => ws.close()
 }
 
-// ---- 审批自动裁决（技能硬调控，实测见 docs/records/approval-probe-2026-08-20.md）----
+// ---- 审批裁决（技能硬调控 + 审批弹窗，实测见 docs/records/approval-probe-2026-08-20.md）----
+
+const APPROVAL_TIMEOUT_MS = 15000 // 审批弹窗无操作时的兜底超时
+
+/** 向 dsh 应答审批结果（allowed-once | always | rejected）。 */
+function respondOutcome(rpcId_, sessionId, approvalId, outcome) {
+  fetch(`${API_BASE}/api/respond`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-response',
+      rpcId: rpcId_,
+      result: { ok: true, value: { sessionId, approvalId, outcome } },
+    }),
+  }).catch((err) => console.error('[bridge] approval respond failed:', err.message))
+}
+
 async function handleApprovalRequest(frame) {
   const { rpcId: rpcId_ = '', payload } = frame || {}
   const { sessionId, approvalId, toolName, callId, reason } = payload || {}
@@ -137,48 +154,67 @@ async function handleApprovalRequest(frame) {
   // 只裁决当前会话的审批；其他会话（如 dsh web 自己开的）由对应端应答
   if (state.sessionId && sessionId !== state.sessionId) return
   const decision = skills.decideApproval(skills.getSkillState(), toolName)
-  emit({ type: 'approval', decision, toolName, reason: reason || '', approvalId, callId })
-  const outcome = decision === 'deny' ? 'rejected' : 'allowed-once'
+
+  // 拒绝决策：技能硬关，不弹 UI，直接拒绝
+  if (decision === 'deny') {
+    emit({ type: 'approval', decision, toolName, reason: reason || '', approvalId, callId })
+    respondOutcome(rpcId_, sessionId, approvalId, 'rejected')
+    return
+  }
+
+  // 放行决策：弹审批 UI 等用户选择（允许一次 / 始终允许 / 拒绝）。
+  // 用户无操作时按原自动放行兜底，避免审批挂起阻塞会话（后端审批无超时）。
+  const pending = { rpcId: rpcId_, sessionId, approvalId, callId, toolName, reason: reason || '' }
+  if (state.pendingApproval) {
+    const old = state.pendingApproval
+    clearTimeout(old.timer)
+    // 旧审批尚未应答 → 兜底放行，避免后端挂起
+    respondOutcome(old.rpcId, old.sessionId, old.approvalId, 'allowed-once')
+    emit({ type: 'approval:done', approvalId: old.approvalId, decision: 'allow' })
+  }
+  state.pendingApproval = pending
+  pending.timer = setTimeout(() => {
+    if (state.pendingApproval !== pending) return
+    state.pendingApproval = null
+    respondOutcome(rpcId_, sessionId, approvalId, 'allowed-once')
+    emit({ type: 'approval:done', approvalId, decision: 'allow' })
+  }, APPROVAL_TIMEOUT_MS)
+  emit({
+    type: 'approval',
+    decision,
+    toolName,
+    reason: reason || '',
+    approvalId,
+    callId,
+    pending: true,
+    rpcId: rpcId_,
+    sessionId,
+  })
+}
+
+/** 审批弹窗应答：用户点击「允许一次 / 始终允许 / 拒绝」（outcome 直传后端）。 */
+export async function respondApproval({ rpcId, sessionId, approvalId, outcome }) {
+  const pending = state.pendingApproval
+  if (pending && pending.approvalId === approvalId) {
+    clearTimeout(pending.timer)
+    state.pendingApproval = null
+  }
   try {
     const res = await fetch(`${API_BASE}/api/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'client-response',
-        rpcId: rpcId_,
+        rpcId: rpcId || pending?.rpcId || '',
         result: { ok: true, value: { sessionId, approvalId, outcome } },
       }),
     })
     const data = await res.json()
-    console.log('[bridge] approval respond →', outcome, toolName, data)
-    if (data?.accepted !== true) {
-      // 应答未被接受（可能重复/过期），审批仍挂起——超时兜底补一次拒绝
-      setTimeout(() => {
-        fetch(`${API_BASE}/api/respond`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'client-response',
-            rpcId: rpcId_,
-            result: { ok: true, value: { sessionId, approvalId, outcome: 'rejected' } },
-          }),
-        }).catch(() => {})
-      }, 5000)
-    }
+    console.log('[bridge] approval respond →', outcome, data)
+    return { ok: data?.accepted === true }
   } catch (err) {
     console.error('[bridge] approval respond failed:', err.message)
-    // 网络异常 → 5s 后重试拒绝（审批无超时，必须兜底）
-    setTimeout(() => {
-      fetch(`${API_BASE}/api/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'client-response',
-          rpcId: rpcId_,
-          result: { ok: true, value: { sessionId, approvalId, outcome: 'rejected' } },
-        }),
-      }).catch(() => {})
-    }, 5000)
+    return { ok: false, error: err.message }
   }
 }
 
@@ -482,6 +518,138 @@ export async function getMcpInfo() {
   }
 }
 
+// ---- Round-2 扩展方法（契约见 docs/plans/rpc-contract-round2.md）----
+// 全部复用 api()，成功返回 { ok:true, ...数据 }，失败返回 { ok:false, error }。
+
+/** 工具目录（tools.list）：value { tools:[{name,description}] }。 */
+export async function listTools() {
+  try {
+    const value = await api('tools.list', {})
+    return { ok: true, tools: value?.tools || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** Provider 目录（providers.list）：value { defaultId, providers:[{id,name,capabilities?,models:[{id,name?}]}] }。 */
+export async function listProviders() {
+  try {
+    const value = await api('providers.list', {})
+    return { ok: true, defaultId: value?.defaultId || null, providers: value?.providers || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 导出会话（session.export）：payload { sessionId, format:'json'|'markdown' } → value { filename, content }。 */
+export async function exportSession(sessionId, format) {
+  if (!sessionId) return { ok: false, error: '会话未就绪' }
+  try {
+    const value = await api('session.export', { sessionId, format: format === 'markdown' ? 'markdown' : 'json' })
+    return { ok: true, filename: value?.filename || '', content: value?.content || '' }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 导入会话（session.import）：payload { content, format:'json' } → value { sessionId }。 */
+export async function importSession(content) {
+  if (!content) return { ok: false, error: '缺少会话内容' }
+  try {
+    const value = await api('session.import', { content, format: 'json' })
+    return { ok: true, sessionId: value?.sessionId || null }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 归档会话（session.archive）：payload { sessionId } → value { ok:true }。 */
+export async function archiveSession(sessionId) {
+  if (!sessionId) return { ok: false, error: '会话未就绪' }
+  try {
+    await api('session.archive', { sessionId })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 恢复归档会话（session.unarchive）：payload { sessionId } → value { ok:true }。 */
+export async function unarchiveSession(sessionId) {
+  if (!sessionId) return { ok: false, error: '会话未就绪' }
+  try {
+    await api('session.unarchive', { sessionId })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 已归档会话列表（session.listArchived）：value { sessions:[SessionRecord…] }。 */
+export async function listArchivedSessions() {
+  try {
+    const value = await api('session.listArchived', {})
+    return { ok: true, sessions: value?.sessions || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 压缩会话（session.compress）：payload { sessionId, keepRecent?=5 } → value { ok:true, summary? }。 */
+export async function compressSession(sessionId, keepRecent) {
+  if (!sessionId) return { ok: false, error: '会话未就绪' }
+  try {
+    const payload = { sessionId }
+    if (keepRecent !== undefined && keepRecent !== null) payload.keepRecent = keepRecent
+    const value = await api('session.compress', payload)
+    return { ok: true, summary: value?.summary || null }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 审批规则（rules.get）：value { rules:[{tool,level}] }。 */
+export async function getRules() {
+  try {
+    const value = await api('rules.get', {})
+    return { ok: true, rules: value?.rules || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 写入审批规则（rules.set）：payload { rules:[{tool,level}] } → value { ok:true }。 */
+export async function setRules(rules) {
+  try {
+    await api('rules.set', { rules: rules || [] })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** MCP 服务器状态（mcp.status）：value { servers:[{id,type,status,tools?}] }（不自动连接）。 */
+export async function mcpStatus() {
+  try {
+    const value = await api('mcp.status', {})
+    return { ok: true, servers: value?.servers || [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** 切换会话模型（session.selectModel）：payload { sessionId, provider, model }。 */
+export async function selectModel(provider, model, sessionId) {
+  const sid = sessionId || state.sessionId
+  if (!sid) return { ok: false, error: '会话未就绪' }
+  try {
+    await api('session.selectModel', { sessionId: sid, provider, model })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
 // ---- 初始化 ----
 let initStarted = false
 
@@ -512,5 +680,18 @@ export default {
   sendCommandToAgent,
   getCredentialsStatus,
   getMcpInfo,
+  listTools,
+  listProviders,
+  exportSession,
+  importSession,
+  archiveSession,
+  unarchiveSession,
+  listArchivedSessions,
+  compressSession,
+  getRules,
+  setRules,
+  mcpStatus,
+  selectModel,
+  respondApproval,
   CHARACTERS,
 }

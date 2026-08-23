@@ -95,21 +95,24 @@ export class Approver implements AuthEngine {
     })
   }
 
-  // 响应审批：按 rpcId 匹配，支持三档结果
+  // 响应审批：优先按 rpcId（map key，即帧 rpcId）匹配，回退按 request.id（approvalId）匹配
   respond(approvalId: string, outcome: ApprovalOutcome): boolean {
-    // 查找匹配的 pending 项（approvalId 对应 request.id）
-    let foundRpcId: string | null = null
-    for (const [rpcId, pending] of this.pending) {
-      if (pending.request.id === approvalId) {
-        foundRpcId = rpcId
-        break
+    // 1. 直接按 rpcId 命中（客户端回传帧 rpcId）
+    let entry = this.pending.get(approvalId)
+
+    // 2. 回退：按 approvalId（request.id）扫描
+    if (!entry) {
+      for (const [, pending] of this.pending) {
+        if (pending.request.id === approvalId) {
+          entry = pending
+          break
+        }
       }
     }
 
-    if (!foundRpcId) return false
+    if (!entry) return false
 
-    const entry = this.pending.get(foundRpcId)!
-    this.pending.delete(foundRpcId)
+    this.pending.delete(entry.rpcId)
     clearTimeout(entry.timeout)
 
     // 处理 always 结果：持久化规则

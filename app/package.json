@@ -9,13 +9,58 @@
     "build": "vite build",
     "preview": "vite preview",
     "dev:electron": "electron .",
-    "build:app": "vite build && electron-builder"
+    "build:app": "vite build && npm run prep:agent:electron && electron-builder",
+    "pack:dir": "npm run prep:agent:electron && electron-builder --dir",
+    "prep:agent:electron": "node scripts/prep-agent-electron.cjs"
+  },
+  "build": {
+    "appId": "com.kotonoha.app",
+    "productName": "Kotonoha",
+    "directories": {
+      "output": "dist-final"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "../agent/dist",
+        "to": "agent/dist"
+      },
+      {
+        "from": "../agent/package.json",
+        "to": "agent/package.json"
+      },
+      {
+        "from": "dist-electron/agent-native/node_modules/better-sqlite3",
+        "to": "agent/node_modules/better-sqlite3"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3",

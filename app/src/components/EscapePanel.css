@@ -718,8 +718,26 @@
   border-radius: 12px;
 }
 
+.ep-mcp-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .ep-mcp-name {
   color: #EDEDEF;
+}
+
+.ep-mcp-type {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #5E6AD2;
+  background: rgba(94, 106, 210, 0.14);
+  border: 1px solid rgba(94, 106, 210, 0.3);
+  border-radius: 999px;
 }
 
 .ep-mcp-state {
@@ -737,6 +755,83 @@
   color: #e8c97a;
   background: rgba(232, 201, 122, 0.1);
   border-color: rgba(232, 201, 122, 0.4);
+}
+
+/* ---- 工具目录（后端）---- */
+.ep-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-tools-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.ep-tools-item .ep-toggle {
+  width: 36px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.ep-tools-item .ep-toggle-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.ep-tools-item .ep-toggle input:checked + .ep-toggle-track + .ep-toggle-thumb {
+  transform: translateX(16px);
+}
+
+.ep-tools-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ep-tools-name {
+  color: #EDEDEF;
+  word-break: break-all;
+}
+
+.ep-tools-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8A8F98;
+  word-break: break-all;
+}
+
+/* ---- 审批规则（只读）---- */
+.ep-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-rules-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.ep-rules-tool {
+  flex: 1;
+  min-width: 0;
+  color: #EDEDEF;
+  word-break: break-all;
 }
 
 /* ---- 命令速查 ---- */

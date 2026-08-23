@@ -5,6 +5,7 @@
 //   settings  当前设置对象 { textSpeed, scene, showCharacter }（由父组件持有）
 //   onChange(partial)  设置变更回调，父组件负责 setSettings 持久化
 import { useEffect, useRef, useState } from 'react'
+import bridge from '../bridge/bridge'
 import {
   getModelInfo,
   setApiKey,
@@ -20,6 +21,11 @@ const SCENES = [
 export default function SettingsPanel({ open = false, onClose, settings, onChange }) {
   const [modelInfo, setModelInfo] = useState(null) // { current, groups, providers } | null
   const [modelState, setModelState] = useState('loading') // loading | ready | error
+  // provider 目录（providers.list 填充）+ 当前选中 provider 的模型下拉
+  const [providers, setProviders] = useState([]) // [{ id, name, capabilities?, models:[{id,name?}] }]
+  const [providersState, setProvidersState] = useState('loading') // loading | ready | error
+  const [models, setModels] = useState([]) // 当前选中 provider 的模型列表
+  const [model, setModel] = useState('') // 当前选中的模型 id
   const [provider, setProvider] = useState('')
   const [apiKey, setApiKeyValue] = useState('')
   const [keyRef, setKeyRef] = useState('')
@@ -28,27 +34,63 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
   const [notice, setNotice] = useState(null) // { kind: 'ok' | 'err', text }
   const noticeTimer = useRef(null)
 
-  // 打开时异步加载模型信息
+  // 打开时异步加载模型信息 + provider 目录（providers.list）
   useEffect(() => {
     if (!open) return
     let stale = false
     setModelState('loading')
+    setProvidersState('loading')
     setNotice(null)
-    getModelInfo().then((info) => {
+    ;(async () => {
+      // ① provider 目录（providers.list，替代旧 llm.providers）
+      let provs = []
+      try {
+        const lp = await bridge.listProviders()
+        if (!stale) {
+          provs = lp?.ok ? lp.providers || [] : []
+          setProviders(provs)
+          setProvidersState(provs.length ? 'ready' : 'error')
+        }
+      } catch {
+        if (!stale) {
+          setProviders([])
+          setProvidersState('error')
+        }
+      }
+      // ② 当前会话模型信息（session.models）
+      let info = null
+      try {
+        info = await getModelInfo()
+      } catch {
+        info = null
+      }
       if (stale) return
       setModelInfo(info)
       setModelState(info ? 'ready' : 'error')
-      if (info?.current) setProvider(info.current.provider)
-    })
+      const cur = info?.current
+      if (cur?.provider) {
+        const p = provs.find((x) => x.id === cur.provider)
+        if (p) {
+          setProvider(cur.provider)
+          const list = p.models || []
+          if (list.some((m) => m.id === cur.model)) setModel(cur.model)
+        }
+      }
+    })()
     return () => {
       stale = true
     }
   }, [open])
 
-  // provider 变化时解析凭据 ref 并查询已配置状态
+  // provider 变化时：刷新该 provider 的模型下拉，并解析凭据 ref 与已配置状态
   useEffect(() => {
     if (!open || !provider) return
     let stale = false
+    setKeyRef('')
+    setKeyConfigured(false)
+    const list = providers.find((x) => x.id === provider)?.models || []
+    setModels(list)
+    setModel((prev) => (list.some((m) => m.id === prev) ? prev : ''))
     ;(async () => {
       try {
         const ref = await getCredentialRef(provider)
@@ -76,26 +118,48 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
 
   async function handleSaveKey() {
     const key = apiKey.trim()
-    if (!provider || !key) {
-      showNotice('err', '请选择 provider 并输入密钥')
+    if (!provider) {
+      showNotice('err', '请选择 provider')
+      return
+    }
+    if (!key && !model) {
+      showNotice('err', '请输入密钥或选择模型')
       return
     }
     setKeyBusy(true)
-    const result = await setApiKey(provider, key)
-    setKeyBusy(false)
-    if (result.ok) {
+    let savedRef = keyRef
+    const parts = []
+    // ① 保存密钥（有输入时才写）
+    if (key) {
+      const result = await setApiKey(provider, key)
+      if (!result.ok) {
+        setKeyBusy(false)
+        showNotice('err', `密钥保存失败：${result.error}`)
+        return
+      }
+      savedRef = result.ref || keyRef
       setApiKeyValue('')
       setKeyConfigured(true)
-      setKeyRef(result.ref || keyRef)
-      showNotice('ok', `密钥已保存（${result.ref}）`)
-    } else {
-      showNotice('err', `保存失败：${result.error}`)
+      parts.push(`密钥已保存（${savedRef}）`)
     }
+    // ② 切换模型（选中了模型才切）
+    if (model) {
+      const mr = await bridge.selectModel(provider, model)
+      if (!mr.ok) {
+        setKeyBusy(false)
+        showNotice('err', `模型切换失败：${mr.error}`)
+        return
+      }
+      parts.push(`已切换 ${provider}/${model}`)
+    }
+    setKeyBusy(false)
+    setKeyRef(savedRef)
+    showNotice('ok', parts.join('，'))
   }
 
   const current = modelInfo?.current
-  const providerOptions = modelInfo?.providers?.length
-    ? modelInfo.providers.map((p) => ({ id: p.provider, label: p.displayName || p.provider }))
+  const providerOptions = providers.length
+    ? providers.map((p) => ({ id: p.id, label: p.name || p.id }))
     : (modelInfo?.groups || []).map((g) => ({ id: g.id, label: g.name || g.id }))
 
   return (
@@ -194,15 +258,34 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
                 setProvider(e.target.value)
                 setKeyRef('')
                 setKeyConfigured(false)
+                setModel('')
               }}
-              disabled={modelState !== 'ready' || providerOptions.length === 0}
+              disabled={providersState !== 'ready' || providerOptions.length === 0}
             >
-              {providerOptions.length === 0 && <option value="">无可用 provider</option>}
+              {providerOptions.length === 0 && (
+                <option value="">{providersState === 'loading' ? '加载中…' : '无可用 provider'}</option>
+              )}
               {providerOptions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>
               ))}
+            </select>
+            <select
+              className="settings-select"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={!provider || models.length === 0}
+            >
+              {!provider || models.length === 0 ? (
+                <option value="">无可用模型</option>
+              ) : (
+                models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.id}
+                  </option>
+                ))
+              )}
             </select>
             <input
               type="password"

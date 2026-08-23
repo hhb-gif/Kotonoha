@@ -99,6 +99,8 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [settings, setSettingsState] = useState(() => getSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 越界审批弹窗（待用户选择：允许一次 / 始终允许 / 拒绝）
+  const [approval, setApproval] = useState(null) // { rpcId, sessionId, approvalId, toolName, reason }
 
   // 事件回调里需要读取最新状态，用 ref 同步
   const messagesRef = useRef(messages)
@@ -256,9 +258,23 @@ export default function App() {
         })
         showToast(ev.message)
       } else if (ev.type === 'approval') {
-        // 越界审批自动裁决结果（技能硬调控）：toast 提示，便于用户感知
-        const label = ev.decision === 'deny' ? '已拒绝' : '已放行'
-        showToast(`越界操作「${ev.toolName || '未知'}」${label}`)
+        if (ev.pending) {
+          // 待用户裁决：弹出审批 UI（允许一次 / 始终允许 / 拒绝）
+          setApproval({
+            rpcId: ev.rpcId,
+            sessionId: ev.sessionId,
+            approvalId: ev.approvalId,
+            toolName: ev.toolName,
+            reason: ev.reason,
+          })
+        } else {
+          // 自动裁决（技能硬关拒绝）：toast 提示
+          const label = ev.decision === 'deny' ? '已拒绝' : '已放行'
+          showToast(`越界操作「${ev.toolName || '未知'}」${label}`)
+        }
+      } else if (ev.type === 'approval:done') {
+        // 审批超时兜底已自动放行 → 关闭弹窗
+        setApproval(null)
       }
     })
     return off
@@ -324,13 +340,13 @@ export default function App() {
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return
-      if (isPlayerTurnRef.current || settingsOpen || escOpen || pageRef.current !== 'dialog') return
+      if (isPlayerTurnRef.current || settingsOpen || escOpen || approval || pageRef.current !== 'dialog') return
       e.preventDefault()
       handleDialogClick()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [handleDialogClick, settingsOpen, escOpen])
+  }, [handleDialogClick, settingsOpen, escOpen, approval])
 
   // ---- ESC：对话页内打开/关闭角色面板（日志打开时优先关日志）----
   useEffect(() => {
@@ -512,6 +528,28 @@ export default function App() {
     setSkillState(skills.setSkillState(id, on))
   }, [])
 
+  // 审批弹窗：用户选择 outcome 并应答（allowed-once | always | rejected）
+  const handleApprovalChoose = useCallback(
+    async (outcome) => {
+      if (!approval) return
+      const res = await bridge.respondApproval({
+        rpcId: approval.rpcId,
+        sessionId: approval.sessionId,
+        approvalId: approval.approvalId,
+        outcome,
+      })
+      const label =
+        outcome === 'always' ? '已始终允许' : outcome === 'rejected' ? '已拒绝' : '已放行'
+      if (res?.ok) {
+        showToast(`越界操作「${approval.toolName || '未知'}」${label}`)
+      } else {
+        showToast(`审批应答失败：${res?.error || '未知错误'}`)
+      }
+      setApproval(null)
+    },
+    [approval, showToast]
+  )
+
   // ESC 面板打开时刷新模型信息
   useEffect(() => {
     if (!escOpen) return
@@ -564,6 +602,7 @@ export default function App() {
           settings={settings}
           onChange={handleSettingsChange}
         />
+        <ApprovalModal approval={approval} onChoose={handleApprovalChoose} />
         {toast && <div className="toast">{toast}</div>}
       </div>
     )
@@ -579,6 +618,7 @@ export default function App() {
           onNewSave={handleNewSave}
           onBack={goMain}
         />
+        <ApprovalModal approval={approval} onChoose={handleApprovalChoose} />
         {toast && <div className="toast">{toast}</div>}
       </div>
     )
@@ -656,6 +696,8 @@ export default function App() {
         messages={messages}
       />
 
+      <ApprovalModal approval={approval} onChoose={handleApprovalChoose} />
+
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
@@ -665,4 +707,50 @@ export default function App() {
 function lastSaveInfo(story) {
   const save = stories.lastSave(story.id)
   return save ? save.name : null
+}
+
+// 越界审批弹窗：用户选择「允许一次 / 始终允许 / 拒绝」
+function ApprovalModal({ approval, onChoose }) {
+  if (!approval) return null
+  return (
+    <div className="appr-overlay">
+      <div className="appr-panel" role="alertdialog" aria-label="审批请求">
+        <h3 className="appr-title">审批请求</h3>
+        <p className="appr-line">
+          <span className="appr-label">工具</span>
+          <span className="appr-value appr-mono">{approval.toolName || '未知'}</span>
+        </p>
+        {approval.reason ? (
+          <p className="appr-line">
+            <span className="appr-label">原因</span>
+            <span className="appr-value">{approval.reason}</span>
+          </p>
+        ) : null}
+        <div className="appr-actions">
+          <button
+            type="button"
+            className="appr-btn appr-once"
+            onClick={() => onChoose('allowed-once')}
+          >
+            允许一次
+          </button>
+          <button
+            type="button"
+            className="appr-btn appr-always"
+            onClick={() => onChoose('always')}
+          >
+            始终允许
+          </button>
+          <button
+            type="button"
+            className="appr-btn appr-deny"
+            onClick={() => onChoose('rejected')}
+          >
+            拒绝
+          </button>
+        </div>
+        <p className="appr-note">「始终允许」会将该工具加入放行规则，后续不再询问。</p>
+      </div>
+    </div>
+  )
 }

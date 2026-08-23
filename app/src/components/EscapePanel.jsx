@@ -171,6 +171,23 @@ function formatTime(ts) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// 触发浏览器下载文本文件（导出会话用）
+function downloadText(filename, content) {
+  try {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || 'session-export.txt'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('[escape] download failed:', err)
+  }
+}
+
 // context 里没有 path：按故事名反查 stories 索引拿工作区路径
 function resolveStory(storyName) {
   if (!storyName) return null
@@ -218,6 +235,15 @@ export default function EscapePanel({
   // 凭据页
   const [creds, setCreds] = useState(null)
   const [credsLoading, setCredsLoading] = useState(false)
+  // 技能页：后端工具目录（tools.list）+ 启停占位
+  const [tools, setTools] = useState(null)
+  const [toolsLoading, setToolsLoading] = useState(false)
+  const [toolToggles, setToolToggles] = useState({})
+  // 会话页：导出 / 归档 / 压缩 操作
+  const [sessionBusy, setSessionBusy] = useState(null) // null | 'export-md' | 'export-json' | 'archive' | 'compress'
+  // 凭据页：审批规则（rules.get 只读）
+  const [rules, setRules] = useState(null)
+  const [rulesLoading, setRulesLoading] = useState(false)
 
   const showMsg = useCallback((msg) => {
     setToast(msg)
@@ -233,21 +259,82 @@ export default function EscapePanel({
     setModelInfo(modelInfoProp)
   }, [open, modelInfoProp])
 
-  // 打开 MCP 页时拉取 MCP 服务信息
+  // 打开 MCP 页时拉取 MCP 服务器状态（mcp.status；失败回退旧 mcp.list）
   useEffect(() => {
     if (!open || tab !== 'mcp') return
     let alive = true
     setMcpLoading(true)
     bridge
-      .getMcpInfo()
-      .then((info) => {
-        if (alive) setMcpInfo(info)
+      .mcpStatus()
+      .then(async (res) => {
+        if (!alive) return
+        if (res?.ok) {
+          setMcpInfo({ items: res.servers || [] })
+        } else {
+          // 旧接口兜底（mcp.list）
+          const legacy = await bridge.getMcpInfo().catch(() => null)
+          if (alive) setMcpInfo(legacy)
+        }
       })
       .catch(() => {
         if (alive) setMcpInfo(null)
       })
       .finally(() => {
         if (alive) setMcpLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, tab])
+
+  // 打开技能页时拉取后端工具目录（tools.list）
+  useEffect(() => {
+    if (!open || tab !== 'skills') return
+    let alive = true
+    setToolsLoading(true)
+    bridge
+      .listTools()
+      .then((res) => {
+        if (!alive) return
+        if (res?.ok) {
+          const items = res.tools || []
+          setTools(items)
+          // 初始化启停占位：默认全开（仅本地预览，不落库）
+          setToolToggles((prev) => {
+            const next = { ...prev }
+            for (const t of items) if (next[t.name] === undefined) next[t.name] = true
+            return next
+          })
+        } else {
+          setTools(null)
+        }
+      })
+      .catch(() => {
+        if (alive) setTools(null)
+      })
+      .finally(() => {
+        if (alive) setToolsLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, tab])
+
+  // 打开凭据页时拉取审批规则（rules.get，只读展示）
+  useEffect(() => {
+    if (!open || tab !== 'creds') return
+    let alive = true
+    setRulesLoading(true)
+    bridge
+      .getRules()
+      .then((res) => {
+        if (alive) setRules(res?.ok ? res.rules || [] : null)
+      })
+      .catch(() => {
+        if (alive) setRules(null)
+      })
+      .finally(() => {
+        if (alive) setRulesLoading(false)
       })
     return () => {
       alive = false
@@ -393,6 +480,71 @@ export default function EscapePanel({
       setCreds(null)
     } finally {
       setCredsLoading(false)
+    }
+  }
+
+  // 导出当前会话（format: 'markdown' | 'json'）
+  async function handleExport(format) {
+    const sid = context?.sessionId
+    if (!sid) {
+      showMsg('会话未就绪，无法导出')
+      return
+    }
+    const tag = format === 'markdown' ? 'export-md' : 'export-json'
+    setSessionBusy(tag)
+    try {
+      const res = await bridge.exportSession(sid, format)
+      if (res?.ok && res.content) {
+        const ext = format === 'markdown' ? 'md' : 'json'
+        downloadText(res.filename || `session-export.${ext}`, res.content)
+        showMsg(`已导出 ${res.filename || `session-export.${ext}`}`)
+      } else {
+        showMsg(`导出失败：${res?.error || '无内容返回'}`)
+      }
+    } catch (err) {
+      showMsg(`导出失败：${err.message}`)
+    } finally {
+      setSessionBusy(null)
+    }
+  }
+
+  // 归档当前会话
+  async function handleArchive() {
+    const sid = context?.sessionId
+    if (!sid) {
+      showMsg('当前会话不可归档')
+      return
+    }
+    setSessionBusy('archive')
+    try {
+      const res = await bridge.archiveSession(sid)
+      showMsg(res?.ok ? '会话已归档' : `归档失败：${res?.error || '未知错误'}`)
+    } catch (err) {
+      showMsg(`归档失败：${err.message}`)
+    } finally {
+      setSessionBusy(null)
+    }
+  }
+
+  // 压缩当前会话（保留最近 5 轮）
+  async function handleCompress() {
+    const sid = context?.sessionId
+    if (!sid) {
+      showMsg('当前会话不可压缩')
+      return
+    }
+    setSessionBusy('compress')
+    try {
+      const res = await bridge.compressSession(sid, 5)
+      if (res?.ok) {
+        showMsg(res.summary ? `会话已压缩：${res.summary}` : '会话已压缩（保留最近 5 轮）')
+      } else {
+        showMsg(`压缩失败：${res?.error || '未知错误'}`)
+      }
+    } catch (err) {
+      showMsg(`压缩失败：${err.message}`)
+    } finally {
+      setSessionBusy(null)
     }
   }
 
@@ -550,6 +702,40 @@ export default function EscapePanel({
                     )
                   })}
                 </div>
+
+                <div className="ep-card">
+                  <h3 className="ep-card-title">工具目录（后端）</h3>
+                  {toolsLoading ? (
+                    <div className="ep-model-loading">读取中…</div>
+                  ) : tools && tools.length ? (
+                    <div className="ep-tools-list">
+                      {tools.map((t) => (
+                        <div key={t.name} className="ep-tools-item">
+                          <label className="ep-toggle">
+                            <input
+                              type="checkbox"
+                              checked={toolToggles[t.name] !== false}
+                              onChange={(e) =>
+                                setToolToggles((prev) => ({ ...prev, [t.name]: e.target.checked }))
+                              }
+                            />
+                            <span className="ep-toggle-track" />
+                            <span className="ep-toggle-thumb" />
+                          </label>
+                          <div className="ep-tools-body">
+                            <span className="ep-tools-name ep-mono">{t.name}</span>
+                            {t.description ? (
+                              <span className="ep-tools-desc">{t.description}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="ep-empty">后端未提供工具列表接口</div>
+                  )}
+                  <div className="ep-note">工具启停开关为占位展示，仅本地预览，不写入后端。</div>
+                </div>
               </section>
             )}
 
@@ -608,6 +794,45 @@ export default function EscapePanel({
                       {renaming ? '处理中…' : '重命名'}
                     </button>
                   </div>
+                </div>
+
+                <div className="ep-card">
+                  <h3 className="ep-card-title">会话操作</h3>
+                  <div className="ep-act-row">
+                    <button
+                      type="button"
+                      className="ep-btn ep-act-btn"
+                      onClick={() => handleExport('markdown')}
+                      disabled={!context?.sessionId || sessionBusy !== null}
+                    >
+                      {sessionBusy === 'export-md' ? '导出中…' : '导出 MD'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ep-btn ep-act-btn"
+                      onClick={() => handleExport('json')}
+                      disabled={!context?.sessionId || sessionBusy !== null}
+                    >
+                      {sessionBusy === 'export-json' ? '导出中…' : '导出 JSON'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ep-btn ep-act-btn"
+                      onClick={handleArchive}
+                      disabled={!context?.sessionId || sessionBusy !== null}
+                    >
+                      {sessionBusy === 'archive' ? '处理中…' : '归档'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ep-btn ep-act-btn"
+                      onClick={handleCompress}
+                      disabled={!context?.sessionId || sessionBusy !== null}
+                    >
+                      {sessionBusy === 'compress' ? '压缩中…' : '压缩（保留5轮）'}
+                    </button>
+                  </div>
+                  <div className="ep-note">归档/压缩仅对当前会话可用；导出为 Markdown/JSON 文件下载。</div>
                 </div>
               </section>
             )}
@@ -678,7 +903,10 @@ export default function EscapePanel({
                           it.connected === true || it.status === 'connected' || it.ok === true
                         return (
                           <div key={it.id || it.name || i} className="ep-mcp-item">
-                            <span className="ep-mcp-name ep-mono">{name}</span>
+                            <div className="ep-mcp-info">
+                              <span className="ep-mcp-name ep-mono">{name}</span>
+                              {it.type ? <span className="ep-mcp-type">{it.type}</span> : null}
+                            </div>
                             <span className={`ep-mcp-state${connected ? ' on' : ''}`}>
                               {connected ? '已连接' : it.status || '未知'}
                             </span>
@@ -752,6 +980,28 @@ export default function EscapePanel({
                     </div>
                   ) : (
                     <div className="ep-empty">无凭据信息</div>
+                  )}
+                </div>
+
+                <div className="ep-card">
+                  <h3 className="ep-card-title">审批规则（只读）</h3>
+                  {rulesLoading ? (
+                    <div className="ep-model-loading">读取中…</div>
+                  ) : rules && rules.length ? (
+                    <div className="ep-rules-list">
+                      {rules.map((r, i) => (
+                        <div key={i} className="ep-rules-item">
+                          <span className="ep-rules-tool ep-mono">
+                            {r.tool === '*' ? '默认（*）' : r.tool}
+                          </span>
+                          <span className={`ep-badge${r.level === 'allow' ? ' on' : ''}`}>
+                            {r.level === 'allow' ? '允许' : r.level === 'ask' ? '询问' : r.level === 'deny' ? '拒绝' : r.level}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="ep-empty">后端未提供审批规则接口</div>
                   )}
                 </div>
               </section>

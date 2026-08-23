@@ -145,6 +145,84 @@ const routes: Record<string, Route> = {
   },
 
   'mcp.list': () => ({ servers: [] }),
+
+  // ---- Round-2 扩展（依赖 ctx.ops；未注入时按 METHOD_NOT_FOUND 处理）----
+
+  'tools.list': (ctx) => {
+    if (!ctx.ops?.listTools) throw new Error('tools.list 未注入')
+    return { tools: ctx.ops.listTools() }
+  },
+
+  'providers.list': async (ctx) => {
+    if (!ctx.ops?.listProviders) throw new Error('providers.list 未注入')
+    return { defaultId: ctx.ops.providerDefaultId?.() ?? '', providers: await ctx.ops.listProviders() }
+  },
+
+  'session.export': async (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    const format = str(p, 'format') === 'markdown' ? 'markdown' : 'json'
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.exportSession) throw new Error('session.export 未注入')
+    const content = await ctx.ops.exportSession(sessionId, format)
+    return { filename: `${sessionId}.${format === 'markdown' ? 'md' : 'json'}`, content }
+  },
+
+  'session.import': async (ctx, p) => {
+    const content = str(p, 'content')
+    const format = str(p, 'format') === 'markdown' ? 'markdown' : 'json'
+    if (!content) throw new Error('content required')
+    if (!ctx.ops?.importSession) throw new Error('session.import 未注入')
+    const rec = await ctx.ops.importSession(content, format)
+    return { sessionId: rec.sessionId }
+  },
+
+  'session.archive': async (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.archiveSession) throw new Error('session.archive 未注入')
+    await ctx.ops.archiveSession(sessionId)
+    return { ok: true }
+  },
+
+  'session.unarchive': async (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.unarchiveSession) throw new Error('session.unarchive 未注入')
+    await ctx.ops.unarchiveSession(sessionId)
+    return { ok: true }
+  },
+
+  'session.listArchived': (ctx) => {
+    if (!ctx.ops?.listArchivedSessions) throw new Error('session.listArchived 未注入')
+    return { sessions: ctx.ops.listArchivedSessions() }
+  },
+
+  'session.compress': async (ctx, p) => {
+    const sessionId = str(p, 'sessionId')
+    const keepRecent = typeof p.keepRecent === 'number' ? p.keepRecent : 5
+    if (!sessionId) throw new Error('sessionId required')
+    if (!ctx.ops?.compressSession) throw new Error('session.compress 未注入')
+    const result = await ctx.ops.compressSession(sessionId, { keepRecent })
+    return { ok: true, ...result }
+  },
+
+  'rules.get': (ctx) => {
+    if (!ctx.ops?.getRules) throw new Error('rules.get 未注入')
+    return { rules: ctx.ops.getRules() }
+  },
+
+  'rules.set': (ctx, p) => {
+    if (!ctx.ops?.setRules) throw new Error('rules.set 未注入')
+    const rules = p.rules as { tool: string; level: 'allow' | 'ask' | 'deny' }[] | undefined
+    if (!Array.isArray(rules)) throw new Error('rules required (array of {tool, level})')
+    ctx.ops.setRules(rules)
+    return { ok: true }
+  },
+
+  'mcp.status': (ctx) => {
+    if (!ctx.ops?.listMcpServers) throw new Error('mcp.status 未注入')
+    return { servers: ctx.ops.listMcpServers() }
+  },
 }
 
 // ---- 入口 ----

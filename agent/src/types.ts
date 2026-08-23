@@ -258,6 +258,30 @@ export interface RpcHandlerContext {
     respond(rpcId: string, outcome: 'allowed-once' | 'rejected'): boolean
   }
   secrets: SecretsStore
+  // Round-2 扩展能力（H2：可选注入，未注入时对应 RPC 返回 METHOD_NOT_FOUND）
+  ops?: {
+    listTools: () => { name: string; description: string }[]
+    listProviders: () => Promise<{
+      id: string
+      name: string
+      capabilities?: string[]
+      models: { id: string; name?: string }[]
+    }[]>
+    providerDefaultId: () => string
+    exportSession: (id: string, format: 'json' | 'markdown') => Promise<string>
+    importSession: (data: string, format: 'json' | 'markdown') => Promise<{ sessionId: string }>
+    compressSession: (
+      id: string,
+      opts: { keepRecent: number }
+    ) => Promise<{ originalEvents: number; compressedEvents: number; summary: string }>
+    archiveSession: (id: string) => Promise<void>
+    unarchiveSession: (id: string) => Promise<void>
+    listArchivedSessions: () => SessionRecord[]
+    isSessionArchived: (id: string) => boolean
+    getRules: () => { tool: string; level: 'allow' | 'ask' | 'deny' }[]
+    setRules: (rules: { tool: string; level: 'allow' | 'ask' | 'deny' }[]) => void
+    listMcpServers: () => { id: string; type: string; status: string; tools?: string[] }[]
+  }
 }
 
 export interface EventHub {
