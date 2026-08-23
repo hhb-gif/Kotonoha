@@ -1,4 +1,4 @@
-// 设置面板：文本速度 / 背景 / 立绘 / 模型与密钥管理
+// 设置面板：文本速度 / 背景 / 立绘 / 模型与密钥管理 / 检查更新
 // props:
 //   open      是否显示（全屏遮罩 modal）
 //   onClose   关闭回调（点遮罩或 × 触发）
@@ -12,6 +12,13 @@ import {
   getCredentialRef,
   getCredentialState,
 } from '../bridge/settings'
+import {
+  updateCapable,
+  checkUpdate,
+  downloadUpdate,
+  quitAndInstall,
+  onUpdateStatus,
+} from '../bridge/update'
 
 const SCENES = [
   { id: 'bg-room', label: '书房夜景' },
@@ -33,6 +40,23 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
   const [keyBusy, setKeyBusy] = useState(false)
   const [notice, setNotice] = useState(null) // { kind: 'ok' | 'err', text }
   const noticeTimer = useRef(null)
+  // 更新状态（主进程 update:status 推送 + 手动检查结果驱动）
+  // idle | checking | latest | available | downloading | downloaded | error | portable-available | dev
+  const [updState, setUpdState] = useState('idle')
+  const [updVersion, setUpdVersion] = useState('')
+  const [updPercent, setUpdPercent] = useState(0)
+  const updBusyRef = useRef(false)
+
+  // 订阅主进程更新状态推送（启动后自动检查 / 下载进度 / 下载完成等）
+  useEffect(() => {
+    const off = onUpdateStatus((payload) => {
+      if (!payload || !payload.state) return
+      setUpdState(payload.state)
+      if (payload.version) setUpdVersion(payload.version)
+      if (payload.state === 'downloading') setUpdPercent(payload.percent || 0)
+    })
+    return off
+  }, [])
 
   // 打开时异步加载模型信息 + provider 目录（providers.list）
   useEffect(() => {
@@ -168,6 +192,113 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
     setKeyBusy(false)
     setKeyRef(savedRef)
     showNotice('ok', parts.join('，'))
+  }
+
+  // ---- 检查更新 ----
+
+  async function handleCheckUpdate() {
+    if (updBusyRef.current) return
+    updBusyRef.current = true
+    setUpdState('checking')
+    const res = await checkUpdate()
+    updBusyRef.current = false
+    if (!res.ok) {
+      // 浏览器 dev 等不支持环境：静默回退，不打扰
+      setUpdState('error')
+      return
+    }
+    // NSIS 触发后立即返回 checking，后续状态由 update:status 事件推送；
+    // portable / dev 直接返回最终状态，这里兜底同步一次
+    if (res.state && res.state !== 'checking') {
+      setUpdState(res.state)
+      if (res.version) setUpdVersion(res.version)
+    }
+  }
+
+  async function handleDownload() {
+    if (updBusyRef.current) return
+    updBusyRef.current = true
+    const res = await downloadUpdate()
+    updBusyRef.current = false
+    if (!res.ok) {
+      setUpdState('error')
+      return
+    }
+    if (res.url) {
+      // portable：已打开 Release 页，保持当前状态（portable-available）
+    } else {
+      // NSIS：进入下载中（进度由 download-progress 事件推送）
+      setUpdState('downloading')
+      setUpdPercent(0)
+    }
+  }
+
+  async function handleQuitInstall() {
+    if (updBusyRef.current) return
+    updBusyRef.current = true
+    await quitAndInstall()
+    updBusyRef.current = false
+  }
+
+  function renderUpdStatus() {
+    switch (updState) {
+      case 'checking':
+        return '检查中…'
+      case 'latest':
+        return `已是最新版本 v${updVersion || ''}`
+      case 'available':
+        return `发现新版本 v${updVersion}`
+      case 'downloading':
+        return `下载中 ${updPercent}%`
+      case 'downloaded':
+        return `新版本 v${updVersion} 已下载，重启后生效`
+      case 'portable-available':
+        return `发现新版本 v${updVersion}（便携版需手动下载）`
+      case 'dev':
+        return '开发模式，不检查更新'
+      case 'error':
+        return '检查失败，请稍后重试'
+      default:
+        return '点击检查更新'
+    }
+  }
+
+  function renderUpdAction() {
+    if (updBusyRef.current) return null
+    switch (updState) {
+      case 'idle':
+      case 'latest':
+      case 'error':
+        return (
+          <button type="button" className="btn upd-btn" onClick={handleCheckUpdate}>
+            检查更新
+          </button>
+        )
+      case 'available':
+      case 'portable-available':
+        return (
+          <button
+            type="button"
+            className="btn upd-btn upd-btn-primary"
+            onClick={handleDownload}
+          >
+            {updState === 'portable-available' ? '前往下载' : '下载更新'}
+          </button>
+        )
+      case 'downloaded':
+        return (
+          <button
+            type="button"
+            className="btn upd-btn upd-btn-primary"
+            onClick={handleQuitInstall}
+          >
+            重启并安装
+          </button>
+        )
+      default:
+        // checking / downloading：无操作按钮，仅显示状态文本
+        return null
+    }
   }
 
   const current = modelInfo?.current
@@ -325,6 +456,19 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
             </span>
           </div>
           <div className="settings-key-note">密钥只存在本机（加密存储），不会上传。</div>
+        </section>
+
+        {/* 区块五：检查更新 */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">检查更新</h3>
+          {updateCapable() ? (
+            <div className="upd-row">
+              <span className={`upd-status ${updState}`}>{renderUpdStatus()}</span>
+              {renderUpdAction()}
+            </div>
+          ) : (
+            <span className="settings-muted">当前环境不支持自动更新</span>
+          )}
         </section>
 
         {notice && (

@@ -9,6 +9,8 @@ const { spawn } = require('child_process')
 const net = require('net')
 const fs = require('fs')
 const path = require('path')
+// 应用内自动更新（electron-updater；dev / portable 分支见 updater.cjs）
+const updater = require('./updater.cjs')
 
 const DEV_URL = process.env.KOTONOHA_DEV_URL || 'http://127.0.0.1:5173'
 // agent 就绪等待超时（毫秒）
@@ -209,6 +211,12 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(agentPort)
   })
+
+  // ---- 应用内更新 ----
+  // 仅打包环境启用（isPackaged 守卫在 updater 内部）；dev 模式只注册 IPC、不检查
+  updater.setWindow(win)
+  updater.init()
+  updater.startAutoCheck()
 })
 
 app.on('window-all-closed', () => {

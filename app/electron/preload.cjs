@@ -21,3 +21,19 @@ const wsBase = agentPort ? `ws://127.0.0.1:${agentPort}` : ''
 contextBridge.exposeInMainWorld('__KOTONOHA_API_BASE__', apiBase)
 contextBridge.exposeInMainWorld('__KOTONOHA_WS_BASE__', wsBase)
 contextBridge.exposeInMainWorld('__KOTONOHA_PICK_DIR__', () => ipcRenderer.invoke('pick-directory'))
+
+// 应用内更新能力（设置面板「检查更新」用）：
+//   checkUpdate    手动触发更新检查（返回 { ok, state, version? }）
+//   downloadUpdate 下载更新（NSIS 自动下载 / portable 打开 Release 页）
+//   quitAndInstall 重启并安装（仅 NSIS，下载完成后）
+//   onStatus       订阅主进程 update:status 推送（返回取消订阅函数）
+contextBridge.exposeInMainWorld('__KOTONOHA_UPDATE__', {
+  checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+  downloadUpdate: () => ipcRenderer.invoke('app:downloadUpdate'),
+  quitAndInstall: () => ipcRenderer.invoke('app:quitAndInstall'),
+  onStatus: (cb) => {
+    const listener = (_event, payload) => cb(payload)
+    ipcRenderer.on('update:status', listener)
+    return () => ipcRenderer.removeListener('update:status', listener)
+  },
+})
