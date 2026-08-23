@@ -37,8 +37,11 @@ function rpcId() {
   return crypto.randomUUID()
 }
 
+// Electron 打包后无 vite proxy：preload 注入实际地址；浏览器 dev 走相对路径
+const API_BASE = (typeof window !== 'undefined' && window.__KOTONOHA_API_BASE__) || ''
+
 async function api(method, payload) {
-  const res = await fetch(`/api/${method}`, {
+  const res = await fetch(`${API_BASE}/api/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'client-request', rpcId: rpcId(), method, payload }),

@@ -1443,6 +1443,11 @@ body {
   animation: onb-fade-in 0.35s ease-out;
 }
 
+/* 设置面板打开时隐藏引导（保留组件状态，关闭后继续引导进度） */
+.onb-overlay.onb-hidden {
+  display: none;
+}
+
 .onb-card {
   position: relative;
   display: flex;

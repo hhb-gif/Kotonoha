@@ -416,11 +416,10 @@ export default function App() {
     setOnboardingOpen(false)
   }, [])
 
-  // 引导「去设置」：完成引导并打开设置面板
+  // 引导「去设置」：打开设置面板（不完成引导；关闭设置后引导继续第 3 步）
   const handleOnboardGoSettings = useCallback(() => {
-    finishOnboarding()
     setSettingsOpen(true)
-  }, [finishOnboarding])
+  }, [])
 
   // ---- 页面导航 ----
   const goMain = useCallback(() => {
@@ -632,6 +631,7 @@ export default function App() {
         />
         <Onboarding
           open={onboardingOpen}
+          hidden={settingsOpen}
           onFinish={finishOnboarding}
           onGoSettings={handleOnboardGoSettings}
         />

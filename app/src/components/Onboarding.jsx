@@ -1,6 +1,7 @@
 // 首次使用引导（onboarding）：视觉小说风格的分步遮罩
 // props:
 //   open          是否显示（由父组件按 localStorage 标记控制）
+//   hidden        设置面板打开时临时隐藏（保留内部步骤进度，关闭后继续）
 //   onFinish      完成/跳过（父组件负责写 kotonoha:onboarding-done 并关闭）
 //   onGoSettings  引导「去设置」按钮（父组件负责打开设置面板）
 import { useEffect, useState } from 'react'
@@ -29,10 +30,10 @@ const STEPS = [
   },
 ]
 
-export default function Onboarding({ open = false, onFinish, onGoSettings }) {
+export default function Onboarding({ open = false, hidden = false, onFinish, onGoSettings }) {
   const [step, setStep] = useState(0)
 
-  // 再次打开时重置到第一步（正常情况下只会出现一次）
+  // 再次打开时重置到第一步（正常情况下只会出现一次；hidden 不触发重置）
   useEffect(() => {
     if (open) setStep(0)
   }, [open])
@@ -48,7 +49,7 @@ export default function Onboarding({ open = false, onFinish, onGoSettings }) {
   }
 
   return (
-    <div className="onb-overlay">
+    <div className={`onb-overlay${hidden ? ' onb-hidden' : ''}`}>
       <div className="onb-card">
         <div className="onb-art">
           <img src="assets/character.png" alt="言叶" />
