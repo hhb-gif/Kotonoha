@@ -2,6 +2,8 @@
   "name": "kotonoha-app",
   "private": true,
   "version": "0.1.0",
+  "description": "Kotonoha — 本地方言工作台 / Local Language Workbench",
+  "author": "Kotonoha",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -16,8 +18,10 @@
   "build": {
     "appId": "com.kotonoha.app",
     "productName": "Kotonoha",
+    "copyright": "Copyright © 2026 Kotonoha",
     "directories": {
-      "output": "dist-final"
+      "output": "dist-final",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -25,6 +29,7 @@
       "package.json"
     ],
     "asar": true,
+    "icon": "build/icon.ico",
     "extraResources": [
       {
         "from": "../agent/dist",
@@ -37,12 +42,34 @@
       {
         "from": "dist-electron/agent-native/node_modules/better-sqlite3",
         "to": "agent/node_modules/better-sqlite3"
+      },
+      {
+        "from": "dist-electron/agent-native/node_modules/bindings",
+        "to": "agent/node_modules/bindings"
+      },
+      {
+        "from": "dist-electron/agent-native/node_modules/file-uri-to-path",
+        "to": "agent/node_modules/file-uri-to-path"
+      },
+      {
+        "from": "dist-electron/agent-native/node.exe",
+        "to": "node/node.exe"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {
       "target": [
         {
           "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
           "arch": [
             "x64"
           ]
@@ -53,6 +80,14 @@
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kotonoha",
+      "artifactName": "${productName}-${version}-setup-${arch}.${ext}"
     }
   },
   "dependencies": {
@@ -62,7 +97,7 @@
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^31.7.7",
+    "electron": "^36.9.5",
     "electron-builder": "^24.13.3",
     "vite": "^5.4.11"
   }

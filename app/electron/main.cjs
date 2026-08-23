@@ -4,7 +4,7 @@
 //   2. 开发模式加载 vite dev server（5173）；生产加载 vite build 产物 dist/index.html
 //   3. 经 preload 把 agent 端口注入渲染层（window.__KOTONOHA_API_BASE__ / __KOTONOHA_WS_BASE__）
 //   4. 应用退出时回收 agent 子进程，避免孤儿进程
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const { spawn } = require('child_process')
 const net = require('net')
 const fs = require('fs')
@@ -24,6 +24,20 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development'
 
 let win = null
 let agentProc = null
+
+// ---- 单实例锁 ----
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // 已有实例在运行：让第二个实例退出，聚焦已有窗口（由主实例的 second-instance 事件处理）
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+}
 
 // ---- agent 子进程管理 ----
 
@@ -89,11 +103,12 @@ async function startAgent() {
   let args
   const env = { ...process.env, PORT: String(port) }
   if (app.isPackaged) {
-    // 打包后没有独立 node：用 Electron 自身（ELECTRON_RUN_AS_NODE=1）充当 node 运行 agent，
+    // 打包后：用内置 node.exe（extraResources -> resources/node/node.exe，Node 22 ABI 127）运行 agent，
+    // 与 resources/agent/node_modules/better-sqlite3 的 ABI 127 原生模块完全匹配，无需重编译。
     // 产物放在 resources/agent（extraResources，真实文件，子进程可读）；数据目录移到用户区。
-    cmd = process.execPath
+    const nodeBin = path.join(process.resourcesPath, 'node', 'node.exe')
+    cmd = nodeBin
     args = [path.join(process.resourcesPath, 'agent', 'dist', 'index.js')]
-    env.ELECTRON_RUN_AS_NODE = '1'
     env.KOTONOHA_DATA_DIR = path.join(app.getPath('userData'), 'agent-data')
     fs.mkdirSync(env.KOTONOHA_DATA_DIR, { recursive: true })
   } else {
@@ -121,9 +136,27 @@ async function startAgent() {
   return port
 }
 
+// ---- 菜单 ----
+
+/** 构建默认菜单：保留基本编辑/视图/窗口操作，隐藏掉对用户无意义的默认菜单。 */
+function buildAppMenu() {
+  const template = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  return Menu.buildFromTemplate(template)
+}
+
 // ---- 窗口 ----
 
 function createWindow(agentPort) {
+  // 窗口图标：打包后用 resources/icon.ico（extraResources），开发用仓库内 build/icon.ico
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.ico')
+    : path.join(__dirname, '..', 'build', 'icon.ico')
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -132,6 +165,7 @@ function createWindow(agentPort) {
     backgroundColor: '#0a0812',
     autoHideMenuBar: true,
     title: 'Kotonoha',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -150,6 +184,7 @@ function createWindow(agentPort) {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(buildAppMenu())
   // 目录选择（新建项目选工作区）：返回绝对路径或 null（取消）
   ipcMain.handle('pick-directory', async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
@@ -181,6 +216,26 @@ app.on('window-all-closed', () => {
 })
 
 // 退出前回收 agent 子进程，避免孤儿进程
+// before-quit（正常退出）与 will-quit（任何退出路径，含崩溃兜底）都挂 killAgent
 app.on('before-quit', () => {
   killAgent()
+})
+app.on('will-quit', () => {
+  killAgent()
+})
+
+// 主进程异常兜底：渲染进程崩溃/主进程未捕获异常时也回收 agent
+process.on('uncaughtException', (err) => {
+  console.error('[main] 未捕获异常:', err)
+  killAgent()
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] 未处理的 Promise rejection:', reason)
+})
+
+// agent 子进程异常退出（非主动 kill）时：若窗口仍存活，弹窗提示并允许重试
+// （agentProc 在 startAgent 里监听 exit 时已置空，这里仅在异常场景兜底记录）
+app.on('child-process-gone', (_event, details) => {
+  if (details.type === 'Utility') return
+  console.warn('[main] 子进程异常退出:', JSON.stringify(details))
 })
