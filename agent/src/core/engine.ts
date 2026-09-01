@@ -15,6 +15,7 @@ import type { Hook } from '../tools/hooks'
 import { TurnRunner } from './agent'
 import { DEFAULT_DATA_DIR } from './context'
 import { createSessionRecord, forkSession } from '../store/sessions'
+import { settleTurn } from '../store/bond'
 
 interface PendingTurn {
   sessionId: string
@@ -55,7 +56,14 @@ export function createEngine(
         const controller = new AbortController()
         active.set(session.id, controller)
         try {
-          await runner.run(session, next.text, controller.signal)
+          const result = await runner.run(session, next.text, controller.signal)
+          // 羁绊结算：turn 完成（runner.run 正常返回，含内部已兜底的 error finish）后结算好感度；
+          // provider 缺失等直接 throw 的失败 turn 不结算。结算失败不阻断 turn 循环。
+          try {
+            settleTurn(deps.db, result)
+          } catch (e) {
+            console.warn('[engine] bond settle failed:', (e as Error).message)
+          }
         } catch (err) {
           // TurnRunner 内部已兜底；防御性再兜一层
           const message = err instanceof Error ? err.message : String(err)

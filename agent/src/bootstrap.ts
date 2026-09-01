@@ -137,7 +137,15 @@ export async function bootstrap(hub: EventHub): Promise<{
       createSkillTool: (db: unknown) => import('./types').Tool
     }
     const { buildSystemPrompt } = require('./core/context') as {
-      buildSystemPrompt: (session: SessionRecord) => string
+      buildSystemPrompt: (
+        session: SessionRecord,
+        cwdNote?: string,
+        dataDir?: string,
+        bondLevel?: number
+      ) => string
+    }
+    const { getBondView } = require('./store/bond') as {
+      getBondView: (db: import('./store').Db) => import('./store/bond').BondView
     }
     const { buildDefaultStore } = require('./store') as {
       buildDefaultStore: (dir: string, envSecret?: string) => import('./store').SessionStore
@@ -331,6 +339,8 @@ export async function bootstrap(hub: EventHub): Promise<{
       // M4：降级记录 / 供应商健康状态
       getDegradations: () => listDegradations(db),
       getProviderHealth: () => health.getStatus(),
+      // v0.2.2 羁绊系统：好感度视图（bond.get）
+      getBond: () => getBondView(db),
     }
 
     const engine = createEngine(
@@ -348,7 +358,9 @@ export async function bootstrap(hub: EventHub): Promise<{
         approver: auth.engine,
         secrets,
         broadcast: (frame: OutboundFrame) => hub.broadcast(frame),
-        systemPrompt: buildSystemPrompt,
+        // 羁绊语气进化：每次组装 system prompt 前先读当前等级（等级变化下一次 turn 生效）
+        systemPrompt: (session: SessionRecord) =>
+          buildSystemPrompt(session, undefined, dataDir, getBondView(db).level),
       },
       { dataDir, extraHooks: plugins.hooks }
     )

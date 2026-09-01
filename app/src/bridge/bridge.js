@@ -426,6 +426,7 @@ export {
   listArchivedSessions, compressSession, getRules, setRules, mcpStatus, selectModel,
   listToolsets, getActiveToolsets, setActiveToolsets, searchSession, interruptSession,
   getCostStats, getDegradations, listMemories, listSkills, approveSkill, rejectSkill, getTrajectory,
+  getBond,
   sessionFork, sessionRename, getCredentialsStatus, getMcpInfo,
 } from './rpc'
 export { onEvent } from './events'

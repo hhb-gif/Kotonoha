@@ -399,6 +399,15 @@ export interface RpcHandlerContext {
     // M4（4.2 provider 可靠性）：降级记录 / 供应商健康状态
     getDegradations?: () => DegradationEntry[]
     getProviderHealth?: () => { id: string; name: string; healthy: boolean }[]
+    // v0.2.2 羁绊系统：好感度视图（bond.get RPC）
+    getBond?: () => {
+      points: number
+      level: number
+      levelName: string
+      interactions: number
+      todayGain: number
+      lastTurnAt: number
+    }
   }
 }
 

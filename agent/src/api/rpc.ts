@@ -365,6 +365,13 @@ const routes: Record<string, Route> = {
     if (!ctx.ops?.getProviderHealth) throw new Error('providers.health 未注入')
     return { providers: ctx.ops.getProviderHealth() }
   },
+
+  // ---- v0.2.2 羁绊系统：好感度视图（增长逻辑在 turn 结束自动跑，无需手动触发）----
+
+  'bond.get': (ctx) => {
+    if (!ctx.ops?.getBond) throw new Error('bond.get 未注入')
+    return ctx.ops.getBond()
+  },
 }
 
 // ---- 入口 ----

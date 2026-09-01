@@ -120,6 +120,15 @@ export function ForkIcon() {
   )
 }
 
+// 心形图标（羁绊页签用，v0.2.2 M6c）
+export function HeartIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  )
+}
+
 // 会话 ID 过长时截断为 20 位
 export function truncateSession(id) {
   if (!id) return null

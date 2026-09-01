@@ -1402,3 +1402,202 @@
   color: #8A8F98;
   word-break: break-all;
 }
+
+/* ---- 羁绊页（v0.2.2 M6c）----
+   基调与 ep- 体系一致：深紫夜空 #0f0a1e / 金 #e8c97a / 紫罗兰 #5E6AD2 */
+/* 升级徽章：金粉底 + 闪金呼吸动画 */
+.ep-bond-badge {
+  margin-bottom: 14px;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: #ffe9b8;
+  background: linear-gradient(135deg, rgba(232, 201, 122, 0.22), rgba(255, 170, 200, 0.22));
+  border: 1px solid rgba(232, 201, 122, 0.55);
+  border-radius: 12px;
+  animation: ep-bond-shine 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes ep-bond-shine {
+  from { box-shadow: 0 0 6px rgba(232, 201, 122, 0.25); }
+  to { box-shadow: 0 0 18px rgba(232, 201, 122, 0.65); }
+}
+
+/* 等级大字 */
+.ep-bond-level-wrap {
+  text-align: center;
+  padding: 14px 0 18px;
+}
+
+.ep-bond-level {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 10px;
+  text-indent: 10px; /* 抵消末字符 letter-spacing，保证视觉居中 */
+}
+
+/* 按等级换色：陌生=灰 / 熟悉=蓝 / 信赖=紫 / 羁绊=金粉渐变 */
+.ep-bond-lv0 {
+  color: #9aa0a8;
+  text-shadow: 0 0 12px rgba(154, 160, 168, 0.35);
+}
+
+.ep-bond-lv1 {
+  color: #6fb3ff;
+  text-shadow: 0 0 12px rgba(111, 179, 255, 0.45);
+}
+
+.ep-bond-lv2 {
+  color: #b48cff;
+  text-shadow: 0 0 14px rgba(180, 140, 255, 0.55);
+}
+
+.ep-bond-lv3 {
+  background: linear-gradient(90deg, #e8c97a, #ffb6d5, #e8c97a);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ep-bond-gold 3s linear infinite;
+}
+
+@keyframes ep-bond-gold {
+  from { background-position: 0% 0; }
+  to { background-position: 200% 0; }
+}
+
+/* 进度条：紫→金渐变填充 */
+.ep-bond-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ep-bond-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #5E6AD2, #b48cff 55%, #e8c97a);
+  box-shadow: 0 0 8px rgba(94, 106, 210, 0.6);
+  transition: width 400ms ease;
+}
+
+.ep-bond-bar-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.ep-bond-next {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #8A8F98;
+}
+
+/* 互动数据：两个并排数字块 */
+.ep-bond-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.ep-bond-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+  background: rgba(94, 106, 210, 0.08);
+  border: 1px solid rgba(94, 106, 210, 0.22);
+  border-radius: 12px;
+}
+
+.ep-bond-stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e8c97a;
+}
+
+.ep-bond-stat-label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #8A8F98;
+}
+
+/* 共同回忆时间线：左侧竖线 + 节点圆点，右侧内容卡 */
+.ep-bond-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-left: 24px;
+}
+
+/* 竖向连线 */
+.ep-bond-timeline::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(232, 201, 122, 0.4), rgba(94, 106, 210, 0.35));
+}
+
+.ep-bond-tl-item {
+  position: relative;
+}
+
+/* 节点圆点 */
+.ep-bond-tl-dot {
+  position: absolute;
+  left: -24px;
+  top: 6px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #5E6AD2;
+  border: 2px solid rgba(15, 10, 30, 0.9);
+  box-shadow: 0 0 8px rgba(94, 106, 210, 0.8);
+}
+
+.ep-bond-tl-body {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.ep-bond-tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ep-bond-tl-date {
+  flex: 0 0 auto;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  color: #8A8F98;
+}
+
+.ep-bond-tl-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #e8c97a;
+}
+
+.ep-bond-tl-detail {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #c9c4d8;
+  word-break: break-all;
+}

@@ -57,8 +57,15 @@ export class TurnRunner {
     this.extraHooks = opts.extraHooks ?? []
   }
 
-  /** 执行一个完整 turn：组装上下文 → 流式生成（可多轮）→ 工具循环 → finish */
-  async run(session: SessionRecord, userText: string, signal?: AbortSignal): Promise<void> {
+  /**
+   * 执行一个完整 turn：组装上下文 → 流式生成（可多轮）→ 工具循环 → finish
+   * 返回值供羁绊结算使用：hadToolCalls（本轮有工具调用）/ replyLength（最终回复长度）
+   */
+  async run(
+    session: SessionRecord,
+    userText: string,
+    signal?: AbortSignal
+  ): Promise<{ hadToolCalls: boolean; replyLength: number }> {
     this.sessionId = session.id
 
     // 1. 组装 messages：systemPrompt + 历史 + 当前用户输入
@@ -95,6 +102,8 @@ export class TurnRunner {
 
     // 跨轮累积的完整回复文本（最终落库用；roundText 每轮重置）
     let assistantText = ''
+    // 本 turn 是否发生过工具调用（羁绊结算用：一起干过活额外+1）
+    let hadToolCalls = false
     // 跨轮累积的 token 用量（成本落库用；openai-compat 尾部 usage 累加）
     let turnPromptTokens = 0
     let turnCompletionTokens = 0
@@ -175,8 +184,9 @@ export class TurnRunner {
           throw new Error('provider 流异常结束（未收到 done）')
         }
 
-        // 本轮无工具调用 → 结束循环
+        // 本轮无工具调用 → 结束循环（发生过调用则标记，供羁绊结算）
         if (calls.length === 0) break
+        hadToolCalls = true
 
         // 本轮有文本或工具调用 → 追加 assistant 消息（含 tool_calls + reasoning_content，thinking 模式必需回传）
         if (roundText || calls.length > 0) {
@@ -250,6 +260,8 @@ export class TurnRunner {
           },
         })
       }
+      // 羁绊结算数据：回复长度取去情绪标签后的最终落库文本
+      return { hadToolCalls, replyLength: cleanText.length }
     } catch (err) {
       // 4. 异常（provider throw / 网络 / 中断等）：finish error，不落库
       //    中断时统一报 'interrupted'（即使底层抛的是网络/流错误）
@@ -261,6 +273,8 @@ export class TurnRunner {
           : String(err)
       this.emitChunk({ type: 'emotion-change', emotion: interrupted ? 'thinking' : 'sad' })
       this.emitChunk({ type: 'finish', reason: { kind: 'error', message } })
+      // 异常 turn 同样返回结算数据（replyLength 退化为原始累积文本长度）
+      return { hadToolCalls, replyLength: assistantText.length }
     } finally {
       // 5. 刷新 last_active_at
       this.deps.db.updateSession(session.id, {})

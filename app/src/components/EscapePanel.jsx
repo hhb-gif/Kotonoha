@@ -1,7 +1,7 @@
 // ESC 角色面板（壳层）：左侧竖排分类页签 + 右侧内容区
 // 内容区按页签分发到 panels/ 下的自包含组件（各面板自己管理加载与操作状态）：
 //   SavePanel（存档）/ ModelPanel（模型）/ SkillsPanel（技能）/ SessionPanel（会话）
-//   / GitPanel / McpPanel / CommandsPanel（命令）/ CredsPanel（凭据）/ StatsPanel（统计）
+//   / GitPanel / McpPanel / CommandsPanel（命令）/ CredsPanel（凭据）/ BondPanel（羁绊）/ StatsPanel（统计）
 // props（与原版一致）：
 //   open           是否显示（全屏遮罩 modal）
 //   onClose        关闭回调（点遮罩 / × / 关闭按钮触发）
@@ -24,6 +24,7 @@ import {
   PlugIcon,
   TerminalIcon,
   KeyIcon,
+  HeartIcon,
   ChartIcon,
 } from './panels/shared'
 import SavePanel from './panels/SavePanel'
@@ -34,6 +35,7 @@ import GitPanel from './panels/GitPanel'
 import McpPanel from './panels/McpPanel'
 import CommandsPanel from './panels/CommandsPanel'
 import CredsPanel from './panels/CredsPanel'
+import BondPanel from './panels/BondPanel'
 import StatsPanel from './panels/StatsPanel'
 import './EscapePanel.css'
 
@@ -46,6 +48,7 @@ const TABS = [
   { id: 'mcp', label: 'MCP', icon: <PlugIcon /> },
   { id: 'commands', label: '命令', icon: <TerminalIcon /> },
   { id: 'creds', label: '凭据', icon: <KeyIcon /> },
+  { id: 'bond', label: '羁绊', icon: <HeartIcon /> },
   { id: 'stats', label: '统计', icon: <ChartIcon /> },
 ]
 
@@ -131,6 +134,7 @@ export default function EscapePanel({
             <McpPanel active={tab === 'mcp'} />
             <CommandsPanel active={tab === 'commands'} />
             <CredsPanel active={tab === 'creds'} />
+            <BondPanel active={tab === 'bond'} />
             <StatsPanel active={tab === 'stats'} context={context} messageCount={messageCount} />
           </div>
         </div>

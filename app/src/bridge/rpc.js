@@ -158,6 +158,19 @@ export function interruptSession(sessionId) {
   return interruptRpc({ sessionId: sessionId || bridgeState?.sessionId })
 }
 
+// ---- 羁绊（v0.2.2 M6c）----
+/** 羁绊状态（bond.get）：value { points, interactions, level(0-3), levelName, todayGain }。
+ *  后端 B1 并行实现中；未就绪时返回 { ok:false }，面板容错显示。 */
+export const getBond = makeApi('bond.get', {
+  map: (v) => ({
+    points: v?.points ?? 0,
+    interactions: v?.interactions ?? 0,
+    level: v?.level ?? 0,
+    levelName: v?.levelName || '',
+    todayGain: v?.todayGain ?? 0,
+  }),
+})
+
 // ---- Harness v2/v3：统计 / 记忆 / 技能 ----
 /** 成本统计（stats.cost）：value { total, bySession }。 */
 export const getCostStats = makeApi('stats.cost', { map: (v) => ({ total: v?.total || 0, bySession: v?.bySession || v?.sessions || {} }) })
