@@ -30,6 +30,10 @@ const DEFAULTS = {
   textSpeed: 40, // ms/字，打字机速度，范围 20~120
   scene: 'bg-room', // 背景图文件名：bg-room（书房夜景）| bg-night（夜空天台）
   showCharacter: true, // 是否显示立绘
+  ttsEnabled: false, // 语音朗读开关（默认关，显式开启避免打扰）
+  ttsVoiceURI: '', // TTS 音色 voiceURI（空 = 系统默认）
+  ttsRate: 1.0, // TTS 语速，范围 0.5~2
+  ttsVolume: 0.8, // TTS 音量，范围 0~1
 }
 
 // ---- RPC ----
@@ -72,6 +76,13 @@ export function getSettings() {
   merged.textSpeed = Math.min(120, Math.max(20, Math.round(merged.textSpeed)))
   if (merged.scene !== 'bg-night') merged.scene = 'bg-room'
   merged.showCharacter = merged.showCharacter !== false
+  // TTS 设置防脏数据
+  if (typeof merged.ttsRate !== 'number') merged.ttsRate = DEFAULTS.ttsRate
+  merged.ttsRate = Math.min(2, Math.max(0.5, merged.ttsRate))
+  if (typeof merged.ttsVolume !== 'number') merged.ttsVolume = DEFAULTS.ttsVolume
+  merged.ttsVolume = Math.min(1, Math.max(0, merged.ttsVolume))
+  if (typeof merged.ttsVoiceURI !== 'string') merged.ttsVoiceURI = ''
+  merged.ttsEnabled = merged.ttsEnabled === true
   return merged
 }
 

@@ -22,6 +22,7 @@ import Onboarding from './components/Onboarding'
 import ApprovalModal from './components/ApprovalModal'
 import useTypeSound from './hooks/useTypeSound'
 import useBGM from './hooks/useBGM'
+import useTTS from './hooks/useTTS'
 import useBridgeEvents from './hooks/useBridgeEvents'
 import useKeyboard from './hooks/useKeyboard'
 import { splitIntoPages } from './utils/dialogText'
@@ -76,6 +77,14 @@ export default function App() {
   const bgmEnabled = settings?.bgm !== false
   const bgmVolume = (settings?.bgmVolume ?? 50) / 100
   const { setScene: setBGMScene } = useBGM(bgmEnabled, bgmVolume)
+
+  // 语音朗读 hook（TTS）：回复完成后朗读全文，新回合/停止生成时取消
+  const { speak: ttsSpeak, cancel: ttsCancel, voices: ttsVoices } = useTTS({
+    enabled: settings?.ttsEnabled === true,
+    rate: settings?.ttsRate ?? 1.0,
+    volume: settings?.ttsVolume ?? 0.8,
+    voiceURI: settings?.ttsVoiceURI || '',
+  })
 
   // 场景切换时更新 BGM
   useEffect(() => {
@@ -225,6 +234,40 @@ export default function App() {
       })
     }
   }, [status])
+
+  // ---- TTS 联动：新回合开始取消朗读（防叠音）；回复完成后朗读全文 ----
+  const emotionRef = useRef(emotion)
+  useEffect(() => {
+    emotionRef.current = emotion
+  }, [emotion])
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = status
+    // 新 turn 开始（thinking/action）：取消上一段朗读
+    if (status === 'thinking' || status === 'action') {
+      ttsCancel()
+      return
+    }
+    // 模型回复完成（thinking/action → ready，对应 bridge 的 model:done → turn/end）：
+    // 朗读最后一条模型消息全文。用户消息/系统提示不朗读；出错时尾部是 user 消息，自然跳过。
+    if (
+      settings?.ttsEnabled === true &&
+      (prev === 'thinking' || prev === 'action') &&
+      status === 'ready'
+    ) {
+      const msgs = messagesRef.current
+      const last = msgs[msgs.length - 1]
+      if (last && last.role === 'model' && last.text) {
+        ttsSpeak(last.text, emotionRef.current)
+      }
+    }
+  }, [status, settings, ttsSpeak, ttsCancel, messagesRef])
+
+  // 离开对话界面（回主菜单/选择界面）时停止朗读
+  useEffect(() => {
+    if (page !== 'dialog') ttsCancel()
+  }, [page, ttsCancel])
 
   // ---- 初始化：连接 dsh + 迁移旧存档 ----
   useEffect(() => {
@@ -394,6 +437,7 @@ export default function App() {
 
   // 停止当前生成（status 为 thinking/action 时显示「■ 停止」按钮）
   const handleStop = useCallback(async () => {
+    ttsCancel() // 停止生成同时停止朗读
     const sid = window.__bridgeDebug?.state?.sessionId
     if (!sid) {
       showToast('会话未就绪')
@@ -409,7 +453,7 @@ export default function App() {
     } catch (err) {
       showToast(`停止失败：${err.message}`)
     }
-  }, [showToast])
+  }, [showToast, ttsCancel])
 
   // ESC 面板打开时刷新模型信息
   useEffect(() => {
@@ -466,6 +510,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           settings={settings}
           onChange={handleSettingsChange}
+          ttsVoices={ttsVoices}
         />
         <Onboarding
           open={onboardingOpen}
@@ -555,6 +600,7 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onChange={handleSettingsChange}
+        ttsVoices={ttsVoices}
       />
 
       <EscapePanel

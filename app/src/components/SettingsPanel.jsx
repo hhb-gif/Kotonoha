@@ -1,9 +1,10 @@
-// 设置面板：文本速度 / 背景 / 立绘 / 模型与密钥管理 / 检查更新
+// 设置面板：文本速度 / 背景 / 打字机音效 / 背景音乐 / 立绘 / 语音朗读 / 模型与密钥管理 / 检查更新
 // props:
 //   open      是否显示（全屏遮罩 modal）
 //   onClose   关闭回调（点遮罩或 × 触发）
-//   settings  当前设置对象 { textSpeed, scene, showCharacter }（由父组件持有）
+//   settings  当前设置对象（由父组件持有）
 //   onChange(partial)  设置变更回调，父组件负责 setSettings 持久化
+//   ttsVoices 系统可用语音包列表（SpeechSynthesisVoice[]，由父组件 useTTS 提供）
 import { useEffect, useRef, useState } from 'react'
 import bridge from '../bridge/bridge'
 import {
@@ -25,7 +26,7 @@ const SCENES = [
   { id: 'bg-night', label: '夜空天台' },
 ]
 
-export default function SettingsPanel({ open = false, onClose, settings, onChange }) {
+export default function SettingsPanel({ open = false, onClose, settings, onChange, ttsVoices = [] }) {
   const [modelInfo, setModelInfo] = useState(null) // { current, groups, providers } | null
   const [modelState, setModelState] = useState('loading') // loading | ready | error
   // provider 目录（providers.list 填充）+ 当前选中 provider 的模型下拉
@@ -306,6 +307,18 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
     ? providers.map((p) => ({ id: p.id, label: p.name || p.id }))
     : (modelInfo?.groups || []).map((g) => ({ id: g.id, label: g.name || g.id }))
 
+  // ---- 语音朗读：音色选项优先中文语音包（zh*），无中文时列出全部系统语音 ----
+  const ttsVoiceList = Array.isArray(ttsVoices) ? ttsVoices : []
+  const zhVoices = ttsVoiceList.filter(
+    (v) => v.lang && String(v.lang).toLowerCase().startsWith('zh')
+  )
+  const ttsVoiceOptions = zhVoices.length > 0 ? zhVoices : ttsVoiceList
+  const ttsVoiceURI = settings?.ttsVoiceURI || ''
+  // 存储的音色不在当前列表（语音包被卸载等）→ 回落系统默认显示（hook 内同样按默认朗读）
+  const ttsVoiceValue = ttsVoiceOptions.some((v) => v.voiceURI === ttsVoiceURI) ? ttsVoiceURI : ''
+  const ttsRate = settings?.ttsRate ?? 1.0
+  const ttsVolumePct = Math.round((settings?.ttsVolume ?? 0.8) * 100)
+
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div
@@ -421,6 +434,77 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               {settings?.showCharacter !== false ? '显示' : '隐藏'}
             </span>
           </div>
+        </section>
+
+        {/* 区块三点五：语音朗读 */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">语音朗读</h3>
+          <div className="settings-row">
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={settings?.ttsEnabled === true}
+                onChange={(e) => onChange({ ttsEnabled: e.target.checked })}
+              />
+              <span className="settings-switch-track" />
+              <span className="settings-switch-thumb" />
+            </label>
+            <span className="settings-value">
+              {settings?.ttsEnabled === true ? '开启' : '关闭'}
+            </span>
+          </div>
+          {settings?.ttsEnabled === true && (
+            <>
+              <div className="settings-row" style={{ marginTop: '8px' }}>
+                <select
+                  className="settings-select"
+                  value={ttsVoiceValue}
+                  onChange={(e) => onChange({ ttsVoiceURI: e.target.value })}
+                  disabled={ttsVoiceOptions.length === 0}
+                >
+                  {ttsVoiceOptions.length === 0 && (
+                    <option value="">系统无可用语音</option>
+                  )}
+                  <option value="">系统默认音色</option>
+                  {ttsVoiceOptions.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name}（{v.lang}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {ttsVoiceOptions.length === 0 && (
+                <div className="settings-key-note">系统无可用语音，朗读不可用</div>
+              )}
+              {ttsVoiceOptions.length > 0 && zhVoices.length === 0 && (
+                <div className="settings-key-note">未找到中文语音包，已列出全部系统语音</div>
+              )}
+              <div className="settings-row" style={{ marginTop: '8px' }}>
+                <input
+                  type="range"
+                  className="settings-slider"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={ttsRate}
+                  onChange={(e) => onChange({ ttsRate: Number(e.target.value) })}
+                />
+                <span className="settings-value">{Number(ttsRate).toFixed(1)}x</span>
+              </div>
+              <div className="settings-row" style={{ marginTop: '8px' }}>
+                <input
+                  type="range"
+                  className="settings-slider"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={ttsVolumePct}
+                  onChange={(e) => onChange({ ttsVolume: Number(e.target.value) / 100 })}
+                />
+                <span className="settings-value">{ttsVolumePct}%</span>
+              </div>
+            </>
+          )}
         </section>
 
         {/* 区块四：模型与密钥管理 */}
