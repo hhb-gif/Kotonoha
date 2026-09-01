@@ -1,7 +1,7 @@
 {
   "name": "kotonoha-app",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.5",
   "description": "Kotonoha — 本地方言工作台 / Local Language Workbench",
   "author": "Kotonoha",
   "type": "module",
