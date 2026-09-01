@@ -129,7 +129,7 @@ export async function loadExternalTools(dir: string): Promise<ExternalLoadResult
         result.tools.push(tool)
         loaded++
       }
-      console.log(`[external] 加载 ${file}：${loaded} 个工具`)
+      console.warn(`[external] 加载 ${file}：${loaded} 个工具`)
     } catch (e) {
       // 错误隔离：单个文件失败不影响其它文件与整体启动
       const message = e instanceof Error ? e.message : String(e)

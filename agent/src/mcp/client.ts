@@ -2,8 +2,8 @@
 // client.ts —— MCPClient 实现 (stdio + SSE)
 // ============================================================
 
-import { StdioTransport, StdioTransportOptions } from './transport/stdio'
-import { SSETransport, SSETransportOptions } from './transport/sse'
+import { StdioTransport } from './transport/stdio'
+import { SSETransport } from './transport/sse'
 
 export interface MCPServerConfig {
   type: 'stdio' | 'sse'

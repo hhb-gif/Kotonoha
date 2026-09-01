@@ -92,10 +92,6 @@ export class TurnRunner {
         : this.deps.tools.list({ checkCtx })
     const tools = resolveToolsets(availableTools, session.toolsets ?? [...DEFAULT_ACTIVE_TOOLSETS])
     const toolDefs = tools.length > 0 ? tools.map((t) => t.def) : undefined
-    console.log(
-      '[agent] run', session.id, 'provider:', session.provider, 'model:', session.model,
-      'tools:', tools.length, 'toolsets:', session.toolsets ?? [...DEFAULT_ACTIVE_TOOLSETS].join('+')
-    )
 
     // 跨轮累积的完整回复文本（最终落库用；roundText 每轮重置）
     let assistantText = ''

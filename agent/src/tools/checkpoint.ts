@@ -154,7 +154,7 @@ export interface CheckpointInfo {
 
 // ===== 内置工具定义（供注册表使用）=====
 
-import type { Tool, ToolDef } from '../types'
+import type { ToolDef } from '../types'
 import type { ExtendedTool } from './protocol'
 import { createExtendedTool } from './protocol'
 

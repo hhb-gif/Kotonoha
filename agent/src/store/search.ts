@@ -16,14 +16,6 @@ export interface SearchHit {
   snippet?: string
 }
 
-interface SearchRow {
-  id: number
-  sessionId: string
-  seq: number
-  payload: string
-  snippet?: string
-}
-
 /** 检测当前 SQLite 编译是否启用 FTS5 */
 export function hasFts5(db: Db): boolean {
   try {

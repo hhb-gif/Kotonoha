@@ -9,16 +9,13 @@ import type { Db, SecretsStore } from '../types'
 import {
   createSessionRecord,
   forkSession,
-  historyToChatMessages,
   exportSession,
   importSession,
-  compressSessionStore,
   archiveSessionStore,
   unarchiveSessionStore,
   listArchivedSessionsStore,
   isSessionArchived,
 } from './sessions'
-import type { CompressOpts } from './compress'
 
 export interface SessionStore {
   // 基础
@@ -34,7 +31,6 @@ export interface SessionStore {
   // 新增
   exportSession(id: string, format: 'json' | 'markdown'): Promise<string>
   importSession(data: string, format: 'json' | 'markdown'): Promise<ReturnType<typeof createSessionRecord>>
-  compressSession(id: string, opts: CompressOpts): Promise<{ originalEvents: number; compressedEvents: number; summary: string }>
   archiveSession(id: string): Promise<void>
   unarchiveSession(id: string): Promise<void>
   listArchivedSessions(): ReturnType<typeof listArchivedSessionsStore>
@@ -47,10 +43,6 @@ export interface SessionStore {
 export function buildDefaultStore(dataDir: string, envSecret?: string): SessionStore {
   const db = openDb(dataDir)
   const secrets = openSecrets(dataDir, envSecret)
-
-  // 从 providers 获取默认小模型（用于压缩摘要）
-  // 这里不直接依赖 providers，调用方需传入 provider 实例
-  const getDefaultSummarizeModel = (): string => 'deepseek-v4-flash'
 
   return {
     // 基础
@@ -66,10 +58,6 @@ export function buildDefaultStore(dataDir: string, envSecret?: string): SessionS
     // 新增
     exportSession: async (id: string, format: 'json' | 'markdown') => exportSession(db, id, format),
     importSession: async (data: string, format: 'json' | 'markdown') => importSession(db, data, format),
-    compressSession: async (id: string, opts: CompressOpts) => {
-      // 需要从外部注入 provider，这里抛出提示
-      throw new Error('compressSession requires a ModelProvider. Use compressSessionStore directly with provider.')
-    },
     archiveSession: async (id: string) => archiveSessionStore(db, id),
     unarchiveSession: async (id: string) => unarchiveSessionStore(db, id),
     listArchivedSessions: () => listArchivedSessionsStore(db),

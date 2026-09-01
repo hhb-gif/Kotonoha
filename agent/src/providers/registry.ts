@@ -7,7 +7,6 @@ import type { ModelProvider, ProviderRegistry } from '../types'
 import { DeepSeekProvider } from './deepseek'
 import { AgnesProvider } from './agnes'
 import { OllamaProvider } from './ollama'
-import { OpenAICompatProvider } from './openai-compat'
 
 const DEFAULT_PROVIDER_ID = 'deepseek-official'
 

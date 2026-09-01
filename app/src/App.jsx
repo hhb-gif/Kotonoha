@@ -1,3 +1,6 @@
+// Kotonoha App：页面路由（main 主界面 | select 选择界面 | dialog 对话界面）+ 核心状态接线
+// 事件流处理在 hooks/useBridgeEvents，快捷键在 hooks/useKeyboard，
+// 文本分页在 utils/dialogText，审批弹窗在 components/ApprovalModal。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import bridge from './bridge/bridge'
 import { getSettings, setSettings, getModelInfo } from './bridge/settings'
@@ -16,8 +19,13 @@ import SelectScreen from './components/SelectScreen'
 import EscapePanel from './components/EscapePanel'
 import LogViewer from './components/LogViewer'
 import Onboarding from './components/Onboarding'
+import ApprovalModal from './components/ApprovalModal'
 import useTypeSound from './hooks/useTypeSound'
 import useBGM from './hooks/useBGM'
+import useBridgeEvents from './hooks/useBridgeEvents'
+import useKeyboard from './hooks/useKeyboard'
+import { splitIntoPages } from './utils/dialogText'
+import { applySlashCommand } from './utils/slashCommands'
 
 // 首次使用引导标记：localStorage 存在即不再显示
 const ONBOARDING_KEY = 'kotonoha:onboarding-done'
@@ -30,91 +38,44 @@ const SCENE_LABELS = {
   'bg-night': '夜空天台',
 }
 
-// 轻量清理 markdown 符号：保留文字、去掉 `**` ` 反引号 # 标题符号等，避免「大小粗细不一」的乱码观感
-function cleanMarkdown(text) {
-  if (!text) return ''
-  return text
-    .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim())
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1$2')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^[-*+]\s+/gm, '• ')
-    .replace(/^>\s?/gm, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-}
-
-// 把长文本切成「页」：每页最多 maxLines 行；单行超过 maxChars 按标点切段
-// maxLines=4：用户反馈断句太碎，每次显示的话语要多一点
-function splitIntoPages(text, maxLines = 4, maxChars = 100) {
-  text = cleanMarkdown(text)
-  if (!text) return []
-  const pages = []
-  let cur = ''
-  let lines = 0
-  const pushLine = (line) => {
-    if (!line) return
-    if (cur && lines >= maxLines) {
-      pages.push(cur)
-      cur = ''
-      lines = 0
-    }
-    cur = cur ? cur + '\n' + line : line
-    lines++
-  }
-  for (const line of text.split('\n')) {
-    let rest = line.trim()
-    while (rest.length > maxChars) {
-      let cut = -1
-      for (let i = Math.min(maxChars, rest.length); i > 0; i--) {
-        if ('。！？；，、.!?;,'.includes(rest[i - 1])) {
-          cut = i
-          break
-        }
-      }
-      if (cut < 0) cut = maxChars
-      pushLine(rest.slice(0, cut))
-      rest = rest.slice(cut)
-    }
-    if (rest) pushLine(rest)
-  }
-  if (cur) pages.push(cur)
-  return pages.length ? pages : [text]
-}
-
 export default function App() {
   // ---- 页面路由：main（主界面）| select（选择界面）| dialog（对话界面）----
   const [page, setPage] = useState('main')
   const [selectMode, setSelectMode] = useState('new') // new：可新建故事/存档；load：只能载入已有
-  const [escOpen, setEscOpen] = useState(false)
-  const [logOpen, setLogOpen] = useState(false)
   const [modelInfo, setModelInfo] = useState(null)
   const [skillState, setSkillState] = useState(() => skills.getSkillState())
 
-  // ---- 对话状态 ----
-  const [messages, setMessages] = useState([])
-  const [shownIndex, setShownIndex] = useState(0)   // 当前展示到第几条
+  // ---- 对话展示状态（事件驱动部分在 useBridgeEvents 内）----
   const [pageIndex, setPageIndex] = useState(0)     // 当前展示到该条的第几页
   const [pageDone, setPageDone] = useState(false)   // 当前页是否打完（等待 Enter 确认）
-  const [typing, setTyping] = useState(false)       // 是否正在打字
-  const [status, setStatus] = useState('ready')     // ready | thinking | action
-  const [actionDetail, setActionDetail] = useState('') // 当前技能名（action 状态）
   const [skipCounter, setSkipCounter] = useState(0) // 点击跳过信号
-  const [streamingText, setStreamingText] = useState('') // 模型流式输出累积
-  const [emotion, setEmotion] = useState('neutral')     // 立绘情绪（E2-sprite：7 种表情）
   const [savedAt, setSavedAt] = useState(null)
   const [toast, setToast] = useState('')
   const [settings, setSettingsState] = useState(() => getSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // 打字机音效 hook
-  const typeSoundEnabled = settings?.typeSound !== false
-  const { play: playTypeSound, preload: preloadTypeSound } = useTypeSound(typeSoundEnabled, 0.3)
+  // 短暂提示（存档/读档/错误反馈）
+  const showToast = useCallback((msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
+  }, [])
 
-  // 背景音乐 hook
+  // ---- 桥接层事件订阅 + 对话核心状态（setMessages/setStreamingText 仅在 hook 内部使用）----
+  const {
+    messages, shownIndex, setShownIndex, typing, setTyping,
+    status, actionDetail, streamingText,
+    emotion, setEmotion, approval, setApproval,
+    messagesRef, shownIndexRef, typingRef, streamingTextRef, log,
+  } = useBridgeEvents(showToast)
+
+  // 打字机音效 hook（preload 未使用，不再解构）
+  const typeSoundEnabled = settings?.typeSound !== false
+  const { play: playTypeSound } = useTypeSound(typeSoundEnabled, 0.3)
+
+  // 背景音乐 hook（BGM 播放/停止由 hook 内部 effect 管理，仅用 setScene 切场景）
   const bgmEnabled = settings?.bgm !== false
   const bgmVolume = (settings?.bgmVolume ?? 50) / 100
-  const { play: playBGM, stop: stopBGM, setScene: setBGMScene } = useBGM(bgmEnabled, bgmVolume)
+  const { setScene: setBGMScene } = useBGM(bgmEnabled, bgmVolume)
 
   // 场景切换时更新 BGM
   useEffect(() => {
@@ -132,49 +93,8 @@ export default function App() {
   // 引导「去设置」后关闭设置 → 递增信号，让引导自动前进到下一步
   const [onbAdvance, setOnbAdvance] = useState(0)
   const onbWentSettingsRef = useRef(false)
-  // 越界审批弹窗（待用户选择：允许一次 / 始终允许 / 拒绝）
-  const [approval, setApproval] = useState(null) // { rpcId, sessionId, approvalId, toolName, reason }
 
-  // 事件回调里需要读取最新状态，用 ref 同步
-  const messagesRef = useRef(messages)
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
-  const shownIndexRef = useRef(shownIndex)
-  useEffect(() => {
-    shownIndexRef.current = shownIndex
-  }, [shownIndex])
-  const statusRef = useRef(status)
-  useEffect(() => {
-    statusRef.current = status
-  }, [status])
-  const typingRef = useRef(typing)
-  useEffect(() => {
-    typingRef.current = typing
-  }, [typing])
-  const streamingTextRef = useRef(streamingText)
-  useEffect(() => {
-    streamingTextRef.current = streamingText
-  }, [streamingText])
-  const pageIndexRef = useRef(pageIndex)
-  useEffect(() => {
-    pageIndexRef.current = pageIndex
-  }, [pageIndex])
-  const pageDoneRef = useRef(pageDone)
-  useEffect(() => {
-    pageDoneRef.current = pageDone
-  }, [pageDone])
-  const pageRef = useRef(page)
-  useEffect(() => {
-    pageRef.current = page
-  }, [page])
-
-  // 开发调试：暴露实时状态 + 关键状态转换日志
-  window.__appLog = window.__appLog || []
-  const log = (tag, extra) => {
-    window.__appLog.push({ t: Date.now(), tag, ...extra })
-    if (window.__appLog.length > 200) window.__appLog.shift()
-  }
+  // 开发调试：暴露实时状态快照（配合 useBridgeEvents 的 __appLog 时间线）
   useEffect(() => {
     window.__appDebug = {
       page,
@@ -183,12 +103,6 @@ export default function App() {
       streamingText: streamingText.slice(0, 60), skipCounter, savedAt,
     }
   })
-
-  // 短暂提示（存档/读档/错误反馈）
-  const showToast = useCallback((msg) => {
-    setToast(msg)
-    setTimeout(() => setToast(''), 2500)
-  }, [])
 
   const current = messages[shownIndex] || null
   // 当前消息的分页（消息切换时自动重新切分；流式期间用 streamingText 动态切分）
@@ -204,6 +118,10 @@ export default function App() {
   useEffect(() => {
     curPagesRef.current = curPages
   }, [curPages])
+  const pageIndexRef = useRef(pageIndex)
+  useEffect(() => {
+    pageIndexRef.current = pageIndex
+  }, [pageIndex])
   // 消息切换：重置到第一页
   useEffect(() => {
     setPageIndex(0)
@@ -215,135 +133,6 @@ export default function App() {
       setPageIndex((i) => Math.min(i, pages.length - 1))
     }
   }, [pages, streamingText])
-
-  // ---- 桥接层事件订阅 ----
-  useEffect(() => {
-    const off = bridge.onEvent((ev) => {
-      if (ev.type === 'user') {
-        // 用户消息：整句入列并展示
-        const next = [...messagesRef.current, { role: 'user', name: ev.name, text: ev.text }]
-        log('user', { len: next.length, setIdx: next.length - 1 })
-        setMessages(next)
-        setShownIndex(next.length - 1)
-        setTyping(true)
-      } else if (ev.type === 'model') {
-        // 模型流式增量：累积到 streamingText，由对话框实时渲染。
-        // 若正处于「技能旁白」状态，切回正常流式展示
-        if (statusRef.current === 'action') {
-          setStatus('thinking')
-          setActionDetail('')
-        }
-        setStreamingText((prev) => prev + ev.delta)
-      } else if (ev.type === 'model:done') {
-        // 模型回复完成：把尾部占位消息补全为完整文本。
-        // Typewriter 识别「完整文本 startsWith 已显示部分」继续打完剩余，不重复。
-        log('model:done', { textLen: (ev.text || '').length })
-        setMessages((prev) => {
-          const next = [...prev]
-          const last = next[next.length - 1]
-          const text = ev.text || '……'
-          if (last && last.role === 'model') next[next.length - 1] = { ...last, text }
-          else next.push({ role: 'model', name: ev.name, text })
-          return next
-        })
-        setStreamingText('')
-        // 补全完成后从当前页继续（流式期间已按页显示，无全文闪现跳变）
-        setTyping(false)
-        bridge.updateSavePreview(ev.text || '')
-      } else if (ev.type === 'replay') {
-        // 历史重放（初始化/读档/新游戏）：整批替换
-        const msgs = ev.messages || []
-        setMessages(msgs)
-        setShownIndex(Math.max(0, msgs.length - 1))
-        setStreamingText('')
-        setTyping(msgs.length > 0) // 空历史不需要打字，直接进入玩家回合
-      } else if (ev.type === 'status') {
-        log('status', { state: ev.state, detail: ev.detail || '' })
-        if (ev.state === 'thinking' || ev.state === 'action') {
-          // 模型开始回应：在尾部追加「空占位」消息（等待流式文本填充）
-          const curLen = messagesRef.current.length
-          const tailEmpty = (() => {
-            const last = messagesRef.current[curLen - 1]
-            return !!(last && last.role === 'model' && last.text === '')
-          })()
-          setMessages((prev) => {
-            const last = prev[prev.length - 1]
-            if (last && last.role === 'model' && last.text === '') return prev
-            return [...prev, { role: 'model', name: '言叶', text: '' }]
-          })
-          log('status:placeholder', { curLen, tailEmpty, typing: typingRef.current, streaming: streamingTextRef.current })
-          // 上一句若已展示完（无打字中消息），直接切到占位位置
-          if (!typingRef.current && !streamingTextRef.current) {
-            // 占位已在尾部（本次或上次追加过）→ 目标索引 = curLen-1；否则追加后占位索引 = curLen
-            setShownIndex(tailEmpty ? curLen - 1 : curLen)
-            setTyping(true)
-          }
-        }
-        setStatus(ev.state)
-        setActionDetail(ev.detail || '')
-        if (ev.state === 'thinking' || ev.state === 'action') setTyping(true)
-      } else if (ev.type === 'emotion') {
-        // E1 后端情绪协议：后端 emit { type:'emotion', state:'happy'|'thinking'|... }
-        // E1 合入后无缝切换，此处直接设置 emotion
-        if (ev.state) setEmotion(ev.state)
-      } else if (ev.type === 'error') {
-        // 出错：撤掉尾部空占位，回到可输入状态
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'model' && last.text === '') return prev.slice(0, -1)
-          return prev
-        })
-        showToast(ev.message)
-      } else if (ev.type === 'degraded') {
-        // 主 provider 失败，后端已切 fallback 重试：toast 提示，对话保持进行
-        showToast(`模型降级：${ev.from || '?'} → ${ev.to || '?'}`)
-      } else if (ev.type === 'approval') {
-        if (ev.pending) {
-          // 待用户裁决：弹出审批 UI（允许一次 / 始终允许 / 拒绝）
-          setApproval({
-            rpcId: ev.rpcId,
-            sessionId: ev.sessionId,
-            approvalId: ev.approvalId,
-            toolName: ev.toolName,
-            reason: ev.reason,
-          })
-        } else {
-          // 自动裁决（技能硬关拒绝）：toast 提示
-          const label = ev.decision === 'deny' ? '已拒绝' : '已放行'
-          showToast(`越界操作「${ev.toolName || '未知'}」${label}`)
-        }
-      } else if (ev.type === 'approval:done') {
-        // 审批超时兜底已自动放行 → 关闭弹窗
-        setApproval(null)
-      }
-    })
-    return off
-  }, [showToast])
-
-  // ---- 初始化：连接 dsh + 迁移旧存档 ----
-  useEffect(() => {
-    bridge.init()
-  }, [])
-
-  // ---- 状态→情绪映射（E1 合入前的降级方案）----
-  // E1 后端会 emit emotion 事件，此处仅在无 emotion 事件时根据 status 推导
-  // E1 合入后，bridge emotion 事件优先级高于此 fallback
-  useEffect(() => {
-    // 若已收到过 bridge emotion 事件，则不再由 status 覆盖
-    // （通过一个 ref 标记：首次收到 emotion 事件后锁死，不再 fallback）
-    // 此处简化处理：status 变化时总是推导 emotion，但 bridge.onEvent 的 emotion 分支优先
-    if (status === 'thinking') {
-      setEmotion('thinking')
-    } else if (status === 'action') {
-      setEmotion('happy')
-    } else if (status === 'ready') {
-      // ready 状态：如果当前是 thinking/action 刚结束，回到 neutral
-      setEmotion((prev) => {
-        if (prev === 'thinking' || prev === 'action') return 'neutral'
-        return prev // 保持其他情绪（如 bridge 设置的 happy/sad 等）
-      })
-    }
-  }, [status])
 
   // ---- 打字完成：玩家自己的话打完直接切到模型回复；模型的话分页停留等待 Enter ----
   // 注意：onComplete 可能在流式期间触发（占位空文本/流式页打完），
@@ -396,45 +185,6 @@ export default function App() {
     }
   }, [typing, streamingText, pageIndex, shownIndex, messages.length])
 
-  // ---- 全局 Enter / 空格：对话框停留时推进（玩家回合 / 设置面板 / ESC 面板打开时不拦截）----
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return
-      if (isPlayerTurnRef.current || settingsOpen || escOpen || approval || pageRef.current !== 'dialog') return
-      e.preventDefault()
-      handleDialogClick()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [handleDialogClick, settingsOpen, escOpen, approval])
-
-  // ---- ESC：对话页内打开/关闭角色面板（日志打开时优先关日志）----
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key !== 'Escape') return
-      if (pageRef.current !== 'dialog') return
-      if (logOpen) {
-        setLogOpen(false)
-        return
-      }
-      setEscOpen((v) => !v)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [logOpen])
-
-  // ---- 快捷键 L：对话页内打开历史记录 ----
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key !== 'l' && e.key !== 'L') return
-      if (pageRef.current !== 'dialog') return
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return
-      setLogOpen((v) => !v)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
-
   // ---- 玩家回合：没有流式、尾部已展示完、当前页已确认、且该轮到玩家说话 ----
   // status==='ready' 已保证无正在进行的 turn；最后一条是 user 或 model 都允许输入
   // （出错/无回复时最后是 user，也应能重试，否则界面会卡住）
@@ -446,10 +196,40 @@ export default function App() {
     pageIndex >= pages.length - 1 &&
     shownIndex >= messages.length - 1 &&
     (messages.length === 0 || ['model', 'user'].includes(messages[messages.length - 1].role))
-  const isPlayerTurnRef = useRef(isPlayerTurn)
+
+  // ---- 全局快捷键（Enter/空格推进、ESC 面板、L 历史记录；logOpen/escOpen 状态在 hook 内）----
+  const { logOpen, setLogOpen, escOpen, setEscOpen } = useKeyboard({
+    isPlayerTurn,
+    handleDialogClick,
+    settingsOpen,
+    approval,
+    page,
+  })
+
+  // ---- 状态→情绪映射（E1 合入前的降级方案）----
+  // E1 后端会 emit emotion 事件，此处仅在无 emotion 事件时根据 status 推导
+  // E1 合入后，bridge emotion 事件优先级高于此 fallback
   useEffect(() => {
-    isPlayerTurnRef.current = isPlayerTurn
-  }, [isPlayerTurn])
+    // 若已收到过 bridge emotion 事件，则不再由 status 覆盖
+    // （通过一个 ref 标记：首次收到 emotion 事件后锁死，不再 fallback）
+    // 此处简化处理：status 变化时总是推导 emotion，但 bridge.onEvent 的 emotion 分支优先
+    if (status === 'thinking') {
+      setEmotion('thinking')
+    } else if (status === 'action') {
+      setEmotion('happy')
+    } else if (status === 'ready') {
+      // ready 状态：如果当前是 thinking/action 刚结束，回到 neutral
+      setEmotion((prev) => {
+        if (prev === 'thinking' || prev === 'action') return 'neutral'
+        return prev // 保持其他情绪（如 bridge 设置的 happy/sad 等）
+      })
+    }
+  }, [status])
+
+  // ---- 初始化：连接 dsh + 迁移旧存档 ----
+  useEffect(() => {
+    bridge.init()
+  }, [])
 
   // ---- 设置 ----
   const handleSettingsChange = useCallback((partial) => {
@@ -491,7 +271,7 @@ export default function App() {
     setPage('select')
   }, [])
 
-  // ---- 发送消息 + 斜杠命令（本地解析，不进 dsh；dsh 的 / 命令路由不暴露 HTTP）----
+  // ---- 发送消息 + 斜杠命令（本地解析见 utils/slashCommands，不进 dsh）----
   const handleSend = useCallback((text) => {
     const t = (text || '').trim()
     if (!t) {
@@ -499,21 +279,18 @@ export default function App() {
       return
     }
     if (t.startsWith('/')) {
-      const [cmd, ...rest] = t.split(/\s+/)
-      const arg = rest.join(' ').trim()
-      switch (cmd.toLowerCase()) {
-        case '/help':
-          showToast('/help /new /save /load /model /skills /log /continue')
-          break
-        case '/new':
-          goMain()
-          showToast('已返回主界面，可开始新对话')
-          break
-        case '/save': {
+      applySlashCommand(t, {
+        goMain,
+        openSettings: () => setSettingsOpen(true),
+        openSkills: () => setEscOpen(true),
+        openLog: () => setLogOpen(true),
+        showToast,
+        // /save [名称]：缺省沿用当前存档名
+        currentSaveName: () => {
           const ctx = stories.getContext()
-          const curName =
-            ctx?.saveId && ctx?.storyId ? stories.getSave(ctx.storyId, ctx.saveId)?.name : null
-          const name = arg || curName || '对话'
+          return ctx?.saveId && ctx?.storyId ? stories.getSave(ctx.storyId, ctx.saveId)?.name : null
+        },
+        save: (name) => {
           bridge.saveNow(name).then((res) => {
             if (res.ok) {
               setSavedAt(Date.now())
@@ -522,29 +299,8 @@ export default function App() {
               showToast(res.error || '存档失败')
             }
           })
-          break
-        }
-        case '/load':
-          goMain()
-          showToast('已返回主界面，可载入其他对话')
-          break
-        case '/model':
-          setSettingsOpen(true)
-          showToast('设置面板已打开')
-          break
-        case '/skills':
-          setEscOpen(true)
-          showToast('ESC 面板已打开 → 技能')
-          break
-        case '/log':
-          setLogOpen(true)
-          break
-        case '/continue':
-          showToast('已处于当前对话中')
-          break
-        default:
-          showToast(`未知命令「${cmd}」，输入 /help 查看`)
-      }
+        },
+      })
       return
     }
     bridge.sendMessage(t)
@@ -840,50 +596,4 @@ export default function App() {
 function lastSaveInfo(story) {
   const save = stories.lastSave(story.id)
   return save ? save.name : null
-}
-
-// 越界审批弹窗：用户选择「允许一次 / 始终允许 / 拒绝」
-function ApprovalModal({ approval, onChoose }) {
-  if (!approval) return null
-  return (
-    <div className="appr-overlay">
-      <div className="appr-panel" role="alertdialog" aria-label="审批请求">
-        <h3 className="appr-title">审批请求</h3>
-        <p className="appr-line">
-          <span className="appr-label">工具</span>
-          <span className="appr-value appr-mono">{approval.toolName || '未知'}</span>
-        </p>
-        {approval.reason ? (
-          <p className="appr-line">
-            <span className="appr-label">原因</span>
-            <span className="appr-value">{approval.reason}</span>
-          </p>
-        ) : null}
-        <div className="appr-actions">
-          <button
-            type="button"
-            className="appr-btn appr-once"
-            onClick={() => onChoose('allowed-once')}
-          >
-            允许一次
-          </button>
-          <button
-            type="button"
-            className="appr-btn appr-always"
-            onClick={() => onChoose('always')}
-          >
-            始终允许
-          </button>
-          <button
-            type="button"
-            className="appr-btn appr-deny"
-            onClick={() => onChoose('rejected')}
-          >
-            拒绝
-          </button>
-        </div>
-        <p className="appr-note">「始终允许」会将该工具加入放行规则，后续不再询问。</p>
-      </div>
-    </div>
-  )
 }

@@ -3,7 +3,7 @@
 // 中文注释、英文标识符
 // ============================================================
 
-import type { ModelProvider, ChatMessage, StreamParams, ProviderChunk } from '../types'
+import type { ModelProvider, ChatMessage, StreamParams } from '../types'
 import type { HistoryEvent } from '../types'
 
 export interface SummaryResult {
@@ -43,7 +43,6 @@ export function estimateMessagesTokens(messages: ChatMessage[]): number {
  * 构建摘要提示词
  */
 function buildSummaryPrompt(events: HistoryEvent[], keepRecent: number): string {
-  const recentEvents = events.slice(-keepRecent)
   const olderEvents = events.slice(0, -keepRecent)
 
   const olderText = olderEvents.map(ev => {

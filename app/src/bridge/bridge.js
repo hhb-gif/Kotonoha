@@ -1,12 +1,12 @@
 // ============================================================
-// bridge.js —— 前端与 dsh（DeepSeek Harness）之间的桥接层
+// bridge.js —— 前端与 dsh（DeepSeek Harness）之间的桥接层（核心：会话/对话/事件流）
 //
 // 协议（已验证，见 docs/verification-report.md）：
-//   - HTTP POST /api/<method>  Typert RPC（client-request → server-response）
+//   - HTTP POST /api/<method>  Typert RPC（client-request → server-response）→ rpc-core.js
 //   - WebSocket /api/events.mux  下行事件流（session/event + approval/requested）
 // 浏览器经 Vite proxy 访问 /api；Electron 下由 preload 注入 __KOTONOHA_API_BASE__。
 //
-// 对外事件（与 UI 层约定，保持稳定）：
+// 对外事件（与 UI 层约定，保持稳定，分发见 events.js）：
 //   { type: 'user',  text, name }
 //   { type: 'model', delta }
 //   { type: 'model:done', text, name }
@@ -15,11 +15,16 @@
 //   { type: 'approval', decision, toolName, reason, approvalId } // 越界审批自动裁决
 //   { type: 'error', message }
 //
-// 会话管理：故事(工作区)/存档(会话) 见 stories.js；技能调控见 skills.js。
+// 域拆分：RPC 方法 → rpc.js；底层协议/工厂 → rpc-core.js；事件总线 → events.js；
+//         审批裁决 → approval.js。故事/存档数据层见 stories.js；技能调控见 skills.js。
 // ============================================================
 
 import * as stories from './stories'
 import * as skills from './skills'
+import { api } from './rpc-core'
+import { emit } from './events'
+import * as rpc from './rpc'
+import { createApproval } from './approval'
 
 // 角色元信息：单模型单角色，后续多模型 = 多角色，这里先写死
 const CHARACTERS = {
@@ -31,7 +36,6 @@ const CHARACTERS = {
 }
 
 // Electron 打包后无 vite proxy：preload 注入实际地址；浏览器 dev 走相对路径
-const API_BASE = (typeof window !== 'undefined' && window.__KOTONOHA_API_BASE__) || ''
 const WS_BASE =
   (typeof window !== 'undefined' && window.__KOTONOHA_WS_BASE__) ||
   `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`
@@ -55,6 +59,12 @@ const state = {
   pendingApproval: null, // 待用户裁决的越界审批（{ rpcId, sessionId, approvalId, callId, toolName, reason, timer }）
 }
 
+// RPC 方法域 + 审批域接线（共享同一 state 对象）
+// bindBridgeState 为内部接线方法，从导出面剥离（默认导出只展开 rpcMethods）
+const { bindBridgeState, ...rpcMethods } = rpc
+bindBridgeState(state)
+const { handleApprovalRequest, respondApproval } = createApproval({ state })
+
 // 降级兼容常量：收到 degraded 帧后若 3s 内无任何新 chunk，
 // 说明后端以 degraded 作为最终 finish（无 fallback 重试流），按错误处理复位界面
 const DEGRADED_TIMEOUT_MS = 3000
@@ -65,48 +75,6 @@ function clearDegradedTimer() {
     clearTimeout(state.degradedTimer)
     state.degradedTimer = null
   }
-}
-
-// ---- 事件总线 ----
-const listeners = new Set()
-
-export function onEvent(cb) {
-  listeners.add(cb)
-  return () => listeners.delete(cb)
-}
-
-function emit(event) {
-  console.log('[bridge] event →', event.type, event.detail || event.state || event.decision || (event.text ? event.text.slice(0, 30) : ''))
-  listeners.forEach((cb) => {
-    try {
-      cb(event)
-    } catch (err) {
-      console.error('[bridge] listener error:', err)
-    }
-  })
-}
-
-// ---- RPC ----
-function rpcId() {
-  return crypto.randomUUID()
-}
-
-async function api(method, payload) {
-  const res = await fetch(`${API_BASE}/api/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'client-request', rpcId: rpcId(), method, payload }),
-  })
-  const data = await res.json()
-  if (!data.result || data.result.ok !== true) {
-    const err = data.result?.error || {}
-    const e = new Error(err.message || `${method} failed`)
-    e.code = err.code
-    e.details = err.details
-    console.error('[bridge] api error', method, e.code, e.message)
-    throw e
-  }
-  return data.result.value
 }
 
 // ---- WebSocket 事件流 ----
@@ -152,94 +120,6 @@ function connectWS() {
     }, 3000)
   }
   ws.onerror = () => ws.close()
-}
-
-// ---- 审批裁决（技能硬调控 + 审批弹窗，实测见 docs/records/approval-probe-2026-08-20.md）----
-
-const APPROVAL_TIMEOUT_MS = 15000 // 审批弹窗无操作时的兜底超时
-
-/** 向 dsh 应答审批结果（allowed-once | always | rejected）。 */
-function respondOutcome(rpcId_, sessionId, approvalId, outcome) {
-  fetch(`${API_BASE}/api/respond`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'client-response',
-      rpcId: rpcId_,
-      result: { ok: true, value: { sessionId, approvalId, outcome } },
-    }),
-  }).catch((err) => console.error('[bridge] approval respond failed:', err.message))
-}
-
-async function handleApprovalRequest(frame) {
-  const { rpcId: rpcId_ = '', payload } = frame || {}
-  const { sessionId, approvalId, toolName, callId, reason } = payload || {}
-  if (!rpcId_ || !sessionId || !approvalId) return
-  // 只裁决当前会话的审批；其他会话（如 dsh web 自己开的）由对应端应答
-  if (state.sessionId && sessionId !== state.sessionId) return
-  const decision = skills.decideApproval(skills.getSkillState(), toolName)
-
-  // 拒绝决策：技能硬关，不弹 UI，直接拒绝
-  if (decision === 'deny') {
-    emit({ type: 'approval', decision, toolName, reason: reason || '', approvalId, callId })
-    respondOutcome(rpcId_, sessionId, approvalId, 'rejected')
-    return
-  }
-
-  // 放行决策：弹审批 UI 等用户选择（允许一次 / 始终允许 / 拒绝）。
-  // 用户无操作时按原自动放行兜底，避免审批挂起阻塞会话（后端审批无超时）。
-  const pending = { rpcId: rpcId_, sessionId, approvalId, callId, toolName, reason: reason || '' }
-  if (state.pendingApproval) {
-    const old = state.pendingApproval
-    clearTimeout(old.timer)
-    // 旧审批尚未应答 → 兜底放行，避免后端挂起
-    respondOutcome(old.rpcId, old.sessionId, old.approvalId, 'allowed-once')
-    emit({ type: 'approval:done', approvalId: old.approvalId, decision: 'allow' })
-  }
-  state.pendingApproval = pending
-  pending.timer = setTimeout(() => {
-    if (state.pendingApproval !== pending) return
-    state.pendingApproval = null
-    respondOutcome(rpcId_, sessionId, approvalId, 'allowed-once')
-    emit({ type: 'approval:done', approvalId, decision: 'allow' })
-  }, APPROVAL_TIMEOUT_MS)
-  emit({
-    type: 'approval',
-    decision,
-    toolName,
-    reason: reason || '',
-    approvalId,
-    callId,
-    pending: true,
-    rpcId: rpcId_,
-    sessionId,
-  })
-}
-
-/** 审批弹窗应答：用户点击「允许一次 / 始终允许 / 拒绝」（outcome 直传后端）。 */
-export async function respondApproval({ rpcId, sessionId, approvalId, outcome }) {
-  const pending = state.pendingApproval
-  if (pending && pending.approvalId === approvalId) {
-    clearTimeout(pending.timer)
-    state.pendingApproval = null
-  }
-  try {
-    const res = await fetch(`${API_BASE}/api/respond`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'client-response',
-        rpcId: rpcId || pending?.rpcId || '',
-        result: { ok: true, value: { sessionId, approvalId, outcome } },
-      }),
-    })
-    const data = await res.json()
-    console.log('[bridge] approval respond →', outcome, data)
-    return { ok: data?.accepted === true }
-  } catch (err) {
-    console.error('[bridge] approval respond failed:', err.message)
-    return { ok: false, error: err.message }
-  }
 }
 
 function handleSessionEvent(ev) {
@@ -334,11 +214,7 @@ async function handleTurnError(reason) {
   if (isRateLimit && !state.degraded) {
     emit({ type: 'status', state: 'thinking', detail: '模型限流，正在切换备用模型…' })
     try {
-      await api('session.selectModel', {
-        sessionId: state.sessionId,
-        provider: FALLBACK_PROVIDER,
-        model: FALLBACK_MODEL,
-      })
+      await api('session.selectModel', { sessionId: state.sessionId, provider: FALLBACK_PROVIDER, model: FALLBACK_MODEL })
       state.degraded = true
       emit({ type: 'error', message: '免费模型限流，已自动切换备用模型' })
       if (state.pendingPrompt) {
@@ -475,7 +351,6 @@ export function leaveDialog() {
 /** 发送用户消息（真实对话，模型流式回复通过 model/model:done 事件推送）。 */
 export async function sendMessage(text) {
   const trimmed = text.trim()
-  console.log('[bridge] sendMessage enter', { trimmed, busy: state.busy, sessionId: state.sessionId })
   if (!trimmed || state.busy) return
   try {
     await ensureSession()
@@ -485,11 +360,7 @@ export async function sendMessage(text) {
     const constraint = skills.buildConstraintSegment(skills.getSkillState())
     const content = [{ type: 'text', text: trimmed }]
     if (constraint) content.push({ type: 'text', text: constraint })
-    await api('session.prompt', {
-      sessionId: state.sessionId,
-      mode: 'queue',
-      content,
-    })
+    await api('session.prompt', { sessionId: state.sessionId, mode: 'queue', content })
     // 看门狗：prompt 已接受但 12s 内未收到 turn/start（WS 断连/后端挂起），复位 busy 并提示，
     // 避免界面永久停留在输入画面。收到 turn/start 后由 handleSessionEvent 清除。
     state.turnWatchdog = setTimeout(() => {
@@ -509,32 +380,7 @@ export async function sendMessage(text) {
   }
 }
 
-// ---- Agent 面板扩展方法（ESC 面板 会话/Git/MCP/凭据 页签使用）----
-
-/** Fork 当前会话（dsh session.fork）：返回新会话 ID。 */
-export async function sessionFork() {
-  if (!state.sessionId) return { ok: false, error: '会话未就绪' }
-  try {
-    const value = await api('session.fork', { sessionId: state.sessionId })
-    const id = value?.sessionId || value?.id || null
-    return id ? { ok: true, sessionId: id } : { ok: false, error: 'fork 返回异常' }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 重命名当前会话（dsh session.rename）。 */
-export async function sessionRename(label) {
-  if (!state.sessionId) return { ok: false, error: '会话未就绪' }
-  const name = (label || '').trim()
-  if (!name) return { ok: false, error: '名称不能为空' }
-  try {
-    await api('session.rename', { sessionId: state.sessionId, label: name })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
+// ---- Agent 面板扩展（ESC 面板 Git 页签用；其余面板方法见 rpc.js）----
 
 /** Git 状态：dsh 无 shell 接口（探测确认），改为请言叶在会话内执行并回显到对话。 */
 export async function getGitStatus() {
@@ -558,315 +404,6 @@ export async function sendCommandToAgent(text) {
   }
 }
 
-/** 凭据状态（dsh credentials.describe，结构防御式解析；失败返回 null）。 */
-export async function getCredentialsStatus() {
-  const refs = ['DEEPSEEK_API_KEY', 'OPENCODE_API_KEY']
-  try {
-    const value = await api('credentials.describe', { refs })
-    const list = value?.refs || value?.items || value || []
-    const out = {}
-    for (const item of list) {
-      if (!item) continue
-      const ref = item.ref || item.name || item.key
-      if (!ref) continue
-      out[ref] = {
-        configured: !!item.configured || !!item.set || !!item.present,
-        source: item.source || item.provider || null,
-      }
-    }
-    return out
-  } catch (err) {
-    return null
-  }
-}
-
-/** MCP 服务器列表（dsh mcp.list；不存在则返回 null）。 */
-export async function getMcpInfo() {
-  try {
-    const value = await api('mcp.list', {})
-    const items = value?.servers || value?.items || value?.mcpServers || []
-    return { items }
-  } catch {
-    return null
-  }
-}
-
-// ---- Round-2 扩展方法（契约见 docs/plans/rpc-contract-round2.md）----
-// 全部复用 api()，成功返回 { ok:true, ...数据 }，失败返回 { ok:false, error }。
-
-/** 工具目录（tools.list）：value { tools:[{name,description}] }。 */
-export async function listTools() {
-  try {
-    const value = await api('tools.list', {})
-    return { ok: true, tools: value?.tools || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** Provider 目录（providers.list）：value { defaultId, providers:[{id,name,capabilities?,models:[{id,name?}]}] }。 */
-export async function listProviders() {
-  try {
-    const value = await api('providers.list', {})
-    return { ok: true, defaultId: value?.defaultId || null, providers: value?.providers || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 导出会话（session.export）：payload { sessionId, format:'json'|'markdown' } → value { filename, content }。 */
-export async function exportSession(sessionId, format) {
-  if (!sessionId) return { ok: false, error: '会话未就绪' }
-  try {
-    const value = await api('session.export', { sessionId, format: format === 'markdown' ? 'markdown' : 'json' })
-    return { ok: true, filename: value?.filename || '', content: value?.content || '' }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 导入会话（session.import）：payload { content, format:'json' } → value { sessionId }。 */
-export async function importSession(content) {
-  if (!content) return { ok: false, error: '缺少会话内容' }
-  try {
-    const value = await api('session.import', { content, format: 'json' })
-    return { ok: true, sessionId: value?.sessionId || null }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 归档会话（session.archive）：payload { sessionId } → value { ok:true }。 */
-export async function archiveSession(sessionId) {
-  if (!sessionId) return { ok: false, error: '会话未就绪' }
-  try {
-    await api('session.archive', { sessionId })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 恢复归档会话（session.unarchive）：payload { sessionId } → value { ok:true }。 */
-export async function unarchiveSession(sessionId) {
-  if (!sessionId) return { ok: false, error: '会话未就绪' }
-  try {
-    await api('session.unarchive', { sessionId })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 已归档会话列表（session.listArchived）：value { sessions:[SessionRecord…] }。 */
-export async function listArchivedSessions() {
-  try {
-    const value = await api('session.listArchived', {})
-    return { ok: true, sessions: value?.sessions || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 压缩会话（session.compress）：payload { sessionId, keepRecent?=5 } → value { ok:true, summary? }。 */
-export async function compressSession(sessionId, keepRecent) {
-  if (!sessionId) return { ok: false, error: '会话未就绪' }
-  try {
-    const payload = { sessionId }
-    if (keepRecent !== undefined && keepRecent !== null) payload.keepRecent = keepRecent
-    const value = await api('session.compress', payload)
-    return { ok: true, summary: value?.summary || null }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 审批规则（rules.get）：value { rules:[{tool,level}] }。 */
-export async function getRules() {
-  try {
-    const value = await api('rules.get', {})
-    return { ok: true, rules: value?.rules || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 写入审批规则（rules.set）：payload { rules:[{tool,level}] } → value { ok:true }。 */
-export async function setRules(rules) {
-  try {
-    await api('rules.set', { rules: rules || [] })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** MCP 服务器状态（mcp.status）：value { servers:[{id,type,status,tools?}] }（不自动连接）。 */
-export async function mcpStatus() {
-  try {
-    const value = await api('mcp.status', {})
-    return { ok: true, servers: value?.servers || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 切换会话模型（session.selectModel）：payload { sessionId, provider, model }。 */
-export async function selectModel(provider, model, sessionId) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  try {
-    await api('session.selectModel', { sessionId: sid, provider, model })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-// ---- Harness v2/v3 扩展方法（契约见 docs/plans/frontend-v2v3.md）----
-// 全部复用 api()，成功返回 { ok:true, ...数据 }，失败返回 { ok:false, error }。
-
-/** 工具集目录（toolsets.list）：value { toolsets:[{name,description,tools}] }。 */
-export async function listToolsets() {
-  try {
-    const value = await api('toolsets.list', {})
-    return { ok: true, toolsets: value?.toolsets || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 当前会话激活的工具集（toolsets.active）：value 兼容 {toolsets:[...]} / {active:[...]}。 */
-export async function getActiveToolsets(sessionId) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  try {
-    const value = await api('toolsets.active', { sessionId: sid })
-    const toolsets = value?.toolsets || value?.active || []
-    return { ok: true, toolsets }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 设置当前会话激活的工具集（toolsets.set）：payload { sessionId, names } → value { ok }。 */
-export async function setActiveToolsets(sessionId, names) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  try {
-    await api('toolsets.set', { sessionId: sid, names: names || [] })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 搜索会话历史（session.search）：payload { sessionId, query, limit? } → value { results:[...] }。 */
-export async function searchSession(sessionId, query, limit) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  if (!query) return { ok: false, error: '缺少搜索关键词' }
-  try {
-    const payload = { sessionId: sid, query }
-    if (limit !== undefined && limit !== null) payload.limit = limit
-    const value = await api('session.search', payload)
-    return { ok: true, results: value?.results || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 中断当前生成（session.interrupt）：payload { sessionId } → value { ok }。 */
-export async function interruptSession(sessionId) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  try {
-    await api('session.interrupt', { sessionId: sid })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 成本统计（stats.cost）：value { total, bySession }。 */
-export async function getCostStats() {
-  try {
-    const value = await api('stats.cost', {})
-    return {
-      ok: true,
-      total: value?.total || 0,
-      bySession: value?.bySession || value?.sessions || {},
-    }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 降级记录（stats.degradations，M4 后端实现中）：value { degradations:[{ts, from, to, reason}] }。 */
-export async function getDegradations() {
-  try {
-    const value = await api('stats.degradations', {})
-    return { ok: true, degradations: value?.degradations || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 语义记忆列表（memory.list）：payload { sessionId? } → value { memories:[...] }。 */
-export async function listMemories(sessionId) {
-  try {
-    const payload = sessionId ? { sessionId } : {}
-    const value = await api('memory.list', payload)
-    return { ok: true, memories: value?.memories || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 技能列表（skills.list）：value { skills:[...] }（含 pending 项）。 */
-export async function listSkills() {
-  try {
-    const value = await api('skills.list', {})
-    return { ok: true, skills: value?.skills || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 批准技能（skills.approve）：payload { id } → value { ok }。 */
-export async function approveSkill(id) {
-  if (!id) return { ok: false, error: '缺少技能 ID' }
-  try {
-    await api('skills.approve', { id })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 拒绝技能（skills.reject）：payload { id } → value { ok }。 */
-export async function rejectSkill(id) {
-  if (!id) return { ok: false, error: '缺少技能 ID' }
-  try {
-    await api('skills.reject', { id })
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
-/** 会话轨迹（session.trajectory）：payload { sessionId } → value { trajectory:[...] }。 */
-export async function getTrajectory(sessionId) {
-  const sid = sessionId || state.sessionId
-  if (!sid) return { ok: false, error: '会话未就绪' }
-  try {
-    const value = await api('session.trajectory', { sessionId: sid })
-    return { ok: true, trajectory: value?.trajectory || [] }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
-
 // ---- 初始化 ----
 let initStarted = false
 
@@ -879,48 +416,33 @@ export async function init() {
   initStarted = true
   stories.migrateLegacy()
   connectWS()
-  window.__bridgeDebug = { state, listeners: listeners.size, wsReady: state.ws ? state.ws.readyState : -1 }
+  window.__bridgeDebug = { state, listeners: listenerCount(), wsReady: state.ws ? state.ws.readyState : -1 }
 }
 
+// ---- 导出面（与原 bridge.js 完全一致）----
+// RPC 方法域从 rpc.js 具名再导出（保持既有 named import 兼容）
+export {
+  listTools, listProviders, exportSession, importSession, archiveSession, unarchiveSession,
+  listArchivedSessions, compressSession, getRules, setRules, mcpStatus, selectModel,
+  listToolsets, getActiveToolsets, setActiveToolsets, searchSession, interruptSession,
+  getCostStats, getDegradations, listMemories, listSkills, approveSkill, rejectSkill, getTrajectory,
+  sessionFork, sessionRename, getCredentialsStatus, getMcpInfo,
+} from './rpc'
+export { onEvent } from './events'
+export { respondApproval }
+
 export default {
+  // 基础
   init,
   sendMessage,
   onEvent,
-  enterStory,
-  newSave,
-  saveNow,
-  updateSavePreview,
-  leaveDialog,
-  sessionFork,
-  sessionRename,
-  getGitStatus,
-  sendCommandToAgent,
-  getCredentialsStatus,
-  getMcpInfo,
-  listTools,
-  listProviders,
-  exportSession,
-  importSession,
-  archiveSession,
-  unarchiveSession,
-  listArchivedSessions,
-  compressSession,
-  getRules,
-  setRules,
-  mcpStatus,
-  selectModel,
-  listToolsets,
-  getActiveToolsets,
-  setActiveToolsets,
-  searchSession,
-  interruptSession,
-  getCostStats,
-  getDegradations,
-  listMemories,
-  listSkills,
-  approveSkill,
-  rejectSkill,
-  getTrajectory,
+  // 故事/存档
+  enterStory, newSave, saveNow, updateSavePreview, leaveDialog,
+  // 面板扩展（Git 走会话消息，其余面板方法在 rpc.js）
+  getGitStatus, sendCommandToAgent,
+  // Round-2 / Harness v2-v3（rpcMethods = rpc.js 全部导出，剔除内部 bindBridgeState）
+  ...rpcMethods,
+  // 审批
   respondApproval,
   CHARACTERS,
 }

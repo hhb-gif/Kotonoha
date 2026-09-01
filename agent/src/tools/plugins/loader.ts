@@ -164,7 +164,7 @@ export async function loadPlugins(dir: string): Promise<PluginLoadResult> {
       const loaded = await loadPlugin(pluginDir, entry.name)
       result.tools.push(...loaded.tools)
       result.hooks.push(...loaded.hooks)
-      console.log(
+      console.warn(
         '[plugins] 加载 ' +
           loaded.manifest.name +
           (loaded.manifest.version ? '@' + loaded.manifest.version : '') +

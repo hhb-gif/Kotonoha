@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { Tool } from '../types'
-import { MCPClient, MCPServerConfig, MCPConnection, MCPTool } from './client'
+import { MCPClient, MCPServerConfig, MCPConnection } from './client'
 import { mapMCPToolsToHarness } from './mapper'
 
 export interface RegisteredServer {

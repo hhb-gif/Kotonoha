@@ -3,7 +3,7 @@
 // 契约：types.ts Tool 为基础，本文件提供扩展接口，不破坏现有 Tool
 // ============================================================
 
-import type { Tool, ToolContext, ToolResult, ToolDef } from '../types'
+import type { Tool, ToolContext, ToolResult } from '../types'
 
 // 工具类型：内置 / MCP / 子 agent / 配置驱动（external，动态生成）
 export type ToolKind = 'builtin' | 'mcp' | 'subagent' | 'dynamic'

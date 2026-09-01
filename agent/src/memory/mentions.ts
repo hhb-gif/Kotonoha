@@ -4,9 +4,8 @@
 // 中文注释、英文标识符
 // ============================================================
 
-import fs from 'node:fs'
 import path from 'node:path'
-import type { Tool, ToolContext, ToolResult } from '../types'
+import type { Tool, ToolContext } from '../types'
 
 export interface FileRef {
   path: string

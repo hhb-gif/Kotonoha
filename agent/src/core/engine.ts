@@ -50,7 +50,6 @@ export function createEngine(
         const session = deps.db.getSession(next.sessionId)
         if (!session) continue // 会话已被删除 → 跳过
 
-        console.log('[engine] turn/start', session.id, 'text:', next.text.slice(0, 40))
         broadcastEvent(session.id, { type: 'turn/start' })
         // 本 turn 的中断控制器：interrupt 后可随时 abort
         const controller = new AbortController()
@@ -95,7 +94,6 @@ export function createEngine(
       if (controller) {
         controller.abort()
         active.delete(sessionId)
-        console.log('[engine] interrupt', sessionId)
         return { ok: true }
       }
       // 2. 无活动 turn → 清理排队中该会话的 prompt（防止中断后残留挂起状态）

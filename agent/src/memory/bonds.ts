@@ -16,20 +16,6 @@ export interface BondEntry {
   applied: boolean     // 是否已追加到会话规则
 }
 
-const BOND_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS bonds (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    trigger TEXT NOT NULL,
-    rule TEXT NOT NULL,
-    category TEXT NOT NULL,
-    confidence REAL NOT NULL,
-    applied INTEGER NOT NULL DEFAULT 0
-  );
-  CREATE INDEX IF NOT EXISTS idx_bonds_session ON bonds(session_id);
-`
-
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }

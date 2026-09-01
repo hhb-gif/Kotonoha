@@ -5,11 +5,6 @@
 import type { Tool, ToolDef, ToolContext, ToolResult } from '../types'
 import { MCPTool, MCPToolResult, MCPConnection } from './client'
 
-export interface ToolMapperOptions {
-  prefix?: string
-  connection: MCPConnection
-}
-
 function convertSchema(mcpSchema: Record<string, unknown>): Record<string, unknown> {
   // MCP uses JSON Schema, which is compatible with our ToolDef.parameters
   // Just ensure we handle required fields and defaults properly
@@ -48,21 +43,6 @@ function convertResult(mcpResult: MCPToolResult): ToolResult {
     ok: !mcpResult.isError,
     output,
     error: mcpResult.isError ? output : undefined,
-  }
-}
-
-export function createMCPTool(mapperOptions: ToolMapperOptions): Tool {
-  const { prefix = '', connection } = mapperOptions
-  
-  // We need to get the tool definition from the connection
-  // This will be called after we have the tool list
-  return {
-    def: {
-      name: '',
-      description: '',
-      parameters: {},
-    },
-    run: async () => ({ ok: false, output: '', error: 'Not initialized' }),
   }
 }
 

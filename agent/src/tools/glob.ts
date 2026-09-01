@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as path from 'node:path'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 
 import type { Tool, ToolResult } from '../types'
 
@@ -150,8 +150,6 @@ async function walkGlob(
       const negated = isNegated(pat)
       const cleanPat = stripNegation(pat)
       const regex = patternToRegex(cleanPat)
-      console.log(`[DEBUG] pattern="${cleanPat}" -> regex=${regex}`)
-      console.log(`[DEBUG]   test relPath="${relPath}" isDir=${isDir} match=${regex.test(relPath) || (isDir && regex.test(relPath + '/'))}`)
       if (regex.test(relPath) || (isDir && regex.test(relPath + '/'))) {
         if (negated) {
           matched = false

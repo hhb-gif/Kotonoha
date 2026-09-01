@@ -85,7 +85,6 @@ export const bashTool: Tool = {
 
     // Windows 下使用 cmd.exe /c，Unix 下使用 bash -c
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
-    const shellArgs = process.platform === 'win32' ? ['/c', command] : ['-c', command]
 
     try {
       const { stdout, stderr } = await execP(command, {

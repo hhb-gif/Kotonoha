@@ -5,8 +5,8 @@
 // 中文注释、英文标识符
 // ============================================================
 
-import type { ModelProvider, StreamParams, ProviderChunk, ProviderCapability } from '../types'
-import { OpenAICompatProvider, buildChatBody, requestChatStream, streamSSE } from './openai-compat'
+import type { StreamParams, ProviderChunk, ProviderCapability } from '../types'
+import { OpenAICompatProvider } from './openai-compat'
 
 const BASE_URL = 'https://apihub.agnes-ai.com/v1/chat/completions'
 const API_KEY_REF = 'AGNES_API_KEY'

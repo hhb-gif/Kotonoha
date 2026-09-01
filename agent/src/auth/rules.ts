@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { SecretsStore } from '../types'
-import type { PermissionRule, PermissionLevel, ToolContext } from './types'
+import type { PermissionRule, ToolContext } from './types'
 
 // 危险命令检测
 function isDangerous(cmd: string): boolean {

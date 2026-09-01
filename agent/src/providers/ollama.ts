@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { ModelProvider, StreamParams, ProviderChunk, ProviderCapability } from '../types'
-import { buildChatBody, requestChatStream, streamSSE } from './openai-compat'
+import { buildChatBody } from './openai-compat'
 
 export interface OllamaOptions {
   baseURL?: string           // 默认 http://127.0.0.1:11434
