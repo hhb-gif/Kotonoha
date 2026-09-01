@@ -1,4 +1,5 @@
 import Typewriter from './Typewriter'
+import { t } from '../i18n'
 
 // 底部对话框：半透明黑底 + 圆角 + 名字标签 + 打字机正文
 // 交互（视觉小说式）：
@@ -38,7 +39,7 @@ export default function DialogBox({
         />
       </div>
       {pageDone && !typing && (
-        <div className="dialog-advance">▼ 按 Enter 继续</div>
+        <div className="dialog-advance">{t('▼ 按 Enter 继续')}</div>
       )}
     </div>
   )

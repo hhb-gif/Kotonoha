@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { formatTime, resolveSave, truncateSession } from './shared'
+import { t } from '../../i18n'
 
 export default function StatsPanel({ active, context, messageCount = 0 }) {
   // 成本（stats.cost）
@@ -90,35 +91,35 @@ export default function StatsPanel({ active, context, messageCount = 0 }) {
   return (
     <section className="ep-pane">
       <div className="ep-card">
-        <h3 className="ep-card-title">会话统计</h3>
+        <h3 className="ep-card-title">{t('会话统计')}</h3>
         <div className="ep-row">
-          <span className="ep-label">消息条数</span>
-          <span className="ep-value">{messageCount} 条</span>
+          <span className="ep-label">{t('消息条数')}</span>
+          <span className="ep-value">{t('{n} 条').replace('{n}', messageCount)}</span>
         </div>
         <div className="ep-row">
-          <span className="ep-label">预览字数</span>
-          <span className="ep-value">{preview.length} 字</span>
+          <span className="ep-label">{t('预览字数')}</span>
+          <span className="ep-value">{t('{n} 字').replace('{n}', preview.length)}</span>
         </div>
         <div className="ep-row">
-          <span className="ep-label">会话 ID</span>
+          <span className="ep-label">{t('会话 ID')}</span>
           <span className="ep-value ep-mono" title={context?.sessionId || ''}>
             {sessionId || '—'}
           </span>
         </div>
         <div className="ep-row">
-          <span className="ep-label">创建时间</span>
+          <span className="ep-label">{t('创建时间')}</span>
           <span className="ep-value">{formatTime(save?.createdAt) || '—'}</span>
         </div>
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">成本统计</h3>
+        <h3 className="ep-card-title">{t('成本统计')}</h3>
         {costLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : costStats ? (
           <div className="ep-cost">
             <div className="ep-cost-total">
-              总费用：
+              {t('总费用：')}
               <span className="ep-cost-amount">
                 ${Number(costStats.total ?? costStats.totalCost ?? 0).toFixed(4)}
               </span>
@@ -142,33 +143,34 @@ export default function StatsPanel({ active, context, messageCount = 0 }) {
             ) : null}
           </div>
         ) : (
-          <div className="ep-empty">成本统计接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('成本统计接口未就绪（等待 bridge 合入）')}</div>
         )}
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">轨迹审计</h3>
+        <h3 className="ep-card-title">{t('轨迹审计')}</h3>
         {trajectoryLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : trajectory ? (
           trajectory.length ? (
             <details className="ep-details">
               <summary className="ep-details-summary">
-                最近 {Math.min(trajectory.length, 20)} 条工具调用（点击展开）
+                {t('最近 {n} 条工具调用（点击展开）').replace('{n}', Math.min(trajectory.length, 20))}
               </summary>
               <div className="ep-trajectory-list">
-                {trajectory.slice(0, 20).map((t, i) => {
-                  const ok = t.ok === true || t.success === true || t.result?.ok === true
-                  const args = t.args || t.params || t.input || null
+                {/* 注意：lambda 参数用 tr，避免遮蔽导入的 t() 翻译函数 */}
+                {trajectory.slice(0, 20).map((tr, i) => {
+                  const ok = tr.ok === true || tr.success === true || tr.result?.ok === true
+                  const args = tr.args || tr.params || tr.input || null
                   return (
-                    <div key={t.id || i} className="ep-trajectory-item">
+                    <div key={tr.id || i} className="ep-trajectory-item">
                       <div className="ep-trajectory-head">
                         <span className="ep-trajectory-tool ep-mono">
-                          {t.tool || t.name || '未知工具'}
+                          {tr.tool || tr.name || t('未知工具')}
                         </span>
-                        {t.time || t.ts || t.timestamp ? (
+                        {tr.time || tr.ts || tr.timestamp ? (
                           <span className="ep-trajectory-time">
-                            {formatTime(t.time || t.ts || t.timestamp)}
+                            {formatTime(tr.time || tr.ts || tr.timestamp)}
                           </span>
                         ) : null}
                         <span className={`ep-badge${ok ? ' on' : ''}`}>{ok ? 'ok' : '—'}</span>
@@ -186,22 +188,22 @@ export default function StatsPanel({ active, context, messageCount = 0 }) {
               </div>
             </details>
           ) : (
-            <div className="ep-empty">暂无轨迹记录</div>
+            <div className="ep-empty">{t('暂无轨迹记录')}</div>
           )
         ) : (
-          <div className="ep-empty">轨迹接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('轨迹接口未就绪（等待 bridge 合入）')}</div>
         )}
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">降级记录</h3>
+        <h3 className="ep-card-title">{t('降级记录')}</h3>
         {degradationsLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : degradations ? (
           degradations.length ? (
             <details className="ep-details">
               <summary className="ep-details-summary">
-                共 {degradations.length} 条降级（点击展开）
+                {t('共 {n} 条降级（点击展开）').replace('{n}', degradations.length)}
               </summary>
               <div className="ep-degradations-list">
                 {degradations.map((d, i) => {
@@ -227,10 +229,10 @@ export default function StatsPanel({ active, context, messageCount = 0 }) {
               </div>
             </details>
           ) : (
-            <div className="ep-empty">暂无降级记录</div>
+            <div className="ep-empty">{t('暂无降级记录')}</div>
           )
         ) : (
-          <div className="ep-empty">降级记录接口未就绪（等待 M4 后端合入）</div>
+          <div className="ep-empty">{t('降级记录接口未就绪（等待 M4 后端合入）')}</div>
         )}
       </div>
     </section>

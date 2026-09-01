@@ -20,7 +20,9 @@ import {
   quitAndInstall,
   onUpdateStatus,
 } from '../bridge/update'
+import { t, setLanguage, getLanguage } from '../i18n'
 
+// 场景 label 存中文原文（即 i18n key），渲染时经 t() 翻译（reload 切语言方案下安全）
 const SCENES = [
   { id: 'bg-room', label: '书房夜景' },
   { id: 'bg-night', label: '夜空天台' },
@@ -151,11 +153,11 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
   async function handleSaveKey() {
     const key = apiKey.trim()
     if (!provider) {
-      showNotice('err', '请选择 provider')
+      showNotice('err', t('请选择 provider'))
       return
     }
     if (!key && !model) {
-      showNotice('err', '请输入密钥或选择模型')
+      showNotice('err', t('请输入密钥或选择模型'))
       return
     }
     setKeyBusy(true)
@@ -183,7 +185,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
       } else if (mr.error === '会话未就绪' || !hasSession) {
         // 新用户尚无会话：selectModel 会因「会话未就绪」失败。
         // 这里仅保存密钥，模型选择在进入对话后生效，不报错。
-        parts.push('密钥已保存，模型将在进入对话后生效')
+        parts.push(t('密钥已保存，模型将在进入对话后生效'))
       } else {
         setKeyBusy(false)
         showNotice('err', `模型切换失败：${mr.error}`)
@@ -244,23 +246,23 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
   function renderUpdStatus() {
     switch (updState) {
       case 'checking':
-        return '检查中…'
+        return t('检查中…')
       case 'latest':
-        return `已是最新版本 v${updVersion || ''}`
+        return t('已是最新版本 v{v}').replace('{v}', updVersion || '')
       case 'available':
-        return `发现新版本 v${updVersion}`
+        return t('发现新版本 v{v}').replace('{v}', updVersion)
       case 'downloading':
-        return `下载中 ${updPercent}%`
+        return t('下载中 {n}%').replace('{n}', updPercent)
       case 'downloaded':
-        return `新版本 v${updVersion} 已下载，重启后生效`
+        return t('新版本 v{v} 已下载，重启后生效').replace('{v}', updVersion)
       case 'portable-available':
-        return `发现新版本 v${updVersion}（便携版需手动下载）`
+        return t('发现新版本 v{v}（便携版需手动下载）').replace('{v}', updVersion)
       case 'dev':
-        return '开发模式，不检查更新'
+        return t('开发模式，不检查更新')
       case 'error':
-        return '检查失败，请稍后重试'
+        return t('检查失败，请稍后重试')
       default:
-        return '点击检查更新'
+        return t('点击检查更新')
     }
   }
 
@@ -272,7 +274,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
       case 'error':
         return (
           <button type="button" className="btn upd-btn" onClick={handleCheckUpdate}>
-            检查更新
+            {t('检查更新')}
           </button>
         )
       case 'available':
@@ -283,7 +285,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
             className="btn upd-btn upd-btn-primary"
             onClick={handleDownload}
           >
-            {updState === 'portable-available' ? '前往下载' : '下载更新'}
+            {updState === 'portable-available' ? t('前往下载') : t('下载更新')}
           </button>
         )
       case 'downloaded':
@@ -293,7 +295,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
             className="btn upd-btn upd-btn-primary"
             onClick={handleQuitInstall}
           >
-            重启并安装
+            {t('重启并安装')}
           </button>
         )
       default:
@@ -325,15 +327,33 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
         className="settings-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="设置"
+        aria-label={t('设置')}
       >
-        <button className="settings-close" onClick={onClose} aria-label="关闭设置">×</button>
+        <button className="settings-close" onClick={onClose} aria-label={t('关闭设置')}>×</button>
 
-        <h2 className="settings-title">设置</h2>
+        <h2 className="settings-title">{t('设置')}</h2>
+
+        {/* 区块零：语言（切换后 setSettings + 整页 reload 生效） */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">{t('语言')}</h3>
+          <div className="settings-row">
+            <select
+              className="settings-select"
+              value={getLanguage()}
+              onChange={(e) => setLanguage(e.target.value)}
+              aria-label={t('语言')}
+            >
+              {/* 语言自名（所有界面语言下均显示本名，业界惯例） */}
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </section>
 
         {/* 区块一：文本速度 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">文本速度</h3>
+          <h3 className="settings-section-title">{t('文本速度')}</h3>
           <div className="settings-row">
             <input
               type="range"
@@ -344,13 +364,15 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               value={settings?.textSpeed ?? 40}
               onChange={(e) => onChange({ textSpeed: Number(e.target.value) })}
             />
-            <span className="settings-value">{settings?.textSpeed ?? 40} ms/字</span>
+            <span className="settings-value">
+              {settings?.textSpeed ?? 40} {t('ms/字')}
+            </span>
           </div>
         </section>
 
         {/* 区块二：背景切换 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">背景</h3>
+          <h3 className="settings-section-title">{t('背景')}</h3>
           <div className="settings-row">
             {SCENES.map((s) => (
               <button
@@ -359,7 +381,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
                 className={`btn settings-scene-btn${settings?.scene === s.id ? ' active' : ''}`}
                 onClick={() => onChange({ scene: s.id })}
               >
-                {s.label}
+                {t(s.label)}
               </button>
             ))}
           </div>
@@ -367,7 +389,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
 
         {/* 区块二点五：打字机音效 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">打字机音效</h3>
+          <h3 className="settings-section-title">{t('打字机音效')}</h3>
           <div className="settings-row">
             <label className="settings-switch">
               <input
@@ -379,14 +401,14 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               <span className="settings-switch-thumb" />
             </label>
             <span className="settings-value">
-              {settings?.typeSound !== false ? '开启' : '关闭'}
+              {settings?.typeSound !== false ? t('开启') : t('关闭')}
             </span>
           </div>
         </section>
 
         {/* 区块二点六：背景音乐 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">背景音乐</h3>
+          <h3 className="settings-section-title">{t('背景音乐')}</h3>
           <div className="settings-row">
             <label className="settings-switch">
               <input
@@ -398,7 +420,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               <span className="settings-switch-thumb" />
             </label>
             <span className="settings-value">
-              {settings?.bgm !== false ? '开启' : '关闭'}
+              {settings?.bgm !== false ? t('开启') : t('关闭')}
             </span>
           </div>
           {settings?.bgm !== false && (
@@ -419,7 +441,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
 
         {/* 区块三：立绘显示 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">立绘显示</h3>
+          <h3 className="settings-section-title">{t('立绘显示')}</h3>
           <div className="settings-row">
             <label className="settings-switch">
               <input
@@ -431,14 +453,14 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               <span className="settings-switch-thumb" />
             </label>
             <span className="settings-value">
-              {settings?.showCharacter !== false ? '显示' : '隐藏'}
+              {settings?.showCharacter !== false ? t('显示') : t('隐藏')}
             </span>
           </div>
         </section>
 
         {/* 区块三点五：语音朗读 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">语音朗读</h3>
+          <h3 className="settings-section-title">{t('语音朗读')}</h3>
           <div className="settings-row">
             <label className="settings-switch">
               <input
@@ -450,7 +472,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               <span className="settings-switch-thumb" />
             </label>
             <span className="settings-value">
-              {settings?.ttsEnabled === true ? '开启' : '关闭'}
+              {settings?.ttsEnabled === true ? t('开启') : t('关闭')}
             </span>
           </div>
           {settings?.ttsEnabled === true && (
@@ -463,21 +485,21 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
                   disabled={ttsVoiceOptions.length === 0}
                 >
                   {ttsVoiceOptions.length === 0 && (
-                    <option value="">系统无可用语音</option>
+                    <option value="">{t('系统无可用语音')}</option>
                   )}
-                  <option value="">系统默认音色</option>
+                  <option value="">{t('系统默认音色')}</option>
                   {ttsVoiceOptions.map((v) => (
                     <option key={v.voiceURI} value={v.voiceURI}>
-                      {v.name}（{v.lang}）
+                      {t('{name}（{lang}）').replace('{name}', v.name).replace('{lang}', v.lang)}
                     </option>
                   ))}
                 </select>
               </div>
               {ttsVoiceOptions.length === 0 && (
-                <div className="settings-key-note">系统无可用语音，朗读不可用</div>
+                <div className="settings-key-note">{t('系统无可用语音，朗读不可用')}</div>
               )}
               {ttsVoiceOptions.length > 0 && zhVoices.length === 0 && (
-                <div className="settings-key-note">未找到中文语音包，已列出全部系统语音</div>
+                <div className="settings-key-note">{t('未找到中文语音包，已列出全部系统语音')}</div>
               )}
               <div className="settings-row" style={{ marginTop: '8px' }}>
                 <input
@@ -509,22 +531,24 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
 
         {/* 区块四：模型与密钥管理 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">模型与密钥</h3>
+          <h3 className="settings-section-title">{t('模型与密钥')}</h3>
 
           <div className="settings-model-info">
-            {modelState === 'loading' && <span className="settings-muted">加载中…</span>}
+            {modelState === 'loading' && <span className="settings-muted">{t('加载中…')}</span>}
             {modelState === 'error' && (
-              <span className="settings-muted settings-error">模型信息加载失败</span>
+              <span className="settings-muted settings-error">{t('模型信息加载失败')}</span>
             )}
             {modelState === 'ready' && (
               <div className="settings-model-current">
                 {current ? (
                   <span className="settings-model-chip">
-                    当前会话 · {current.provider} / {current.model}
-                    {current.reasoningEffort ? `（${current.reasoningEffort}）` : ''}
+                    {t('当前会话 · {p} / {m}')
+                      .replace('{p}', current.provider)
+                      .replace('{m}', current.model)}
+                    {current.reasoningEffort ? t('（{e}）').replace('{e}', current.reasoningEffort) : ''}
                   </span>
                 ) : (
-                  <span className="settings-muted">当前会话暂无模型信息</span>
+                  <span className="settings-muted">{t('当前会话暂无模型信息')}</span>
                 )}
               </div>
             )}
@@ -543,7 +567,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               disabled={providersState !== 'ready' || providerOptions.length === 0}
             >
               {providerOptions.length === 0 && (
-                <option value="">{providersState === 'loading' ? '加载中…' : '无可用 provider'}</option>
+                <option value="">{providersState === 'loading' ? t('加载中…') : t('无可用 provider')}</option>
               )}
               {providerOptions.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -558,7 +582,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               disabled={!provider || models.length === 0}
             >
               {!provider || models.length === 0 ? (
-                <option value="">模型由本地服务提供</option>
+                <option value="">{t('模型由本地服务提供')}</option>
               ) : (
                 models.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -570,7 +594,7 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
             <input
               type="password"
               className="settings-input"
-              placeholder="API 密钥（sk-…）"
+              placeholder={t('API 密钥（sk-…）')}
               value={apiKey}
               onChange={(e) => setApiKeyValue(e.target.value)}
               autoComplete="off"
@@ -581,29 +605,29 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
               onClick={handleSaveKey}
               disabled={keyBusy}
             >
-              {keyBusy ? '保存中…' : '保存'}
+              {keyBusy ? t('保存中…') : t('保存')}
             </button>
           </div>
 
           <div className="settings-ref-line">
             <span className="settings-muted">
-              凭据引用：{keyRef || '—'}
-              {keyRef ? (keyConfigured ? '（已配置）' : '（未配置）') : ''}
+              {t('凭据引用：')}{keyRef || '—'}
+              {keyRef ? (keyConfigured ? t('（已配置）') : t('（未配置）')) : ''}
             </span>
           </div>
-          <div className="settings-key-note">密钥只存在本机（加密存储），不会上传。</div>
+          <div className="settings-key-note">{t('密钥只存在本机（加密存储），不会上传。')}</div>
         </section>
 
         {/* 区块五：检查更新 */}
         <section className="settings-section">
-          <h3 className="settings-section-title">检查更新</h3>
+          <h3 className="settings-section-title">{t('检查更新')}</h3>
           {updateCapable() ? (
             <div className="upd-row">
               <span className={`upd-status ${updState}`}>{renderUpdStatus()}</span>
               {renderUpdAction()}
             </div>
           ) : (
-            <span className="settings-muted">当前环境不支持自动更新</span>
+            <span className="settings-muted">{t('当前环境不支持自动更新')}</span>
           )}
         </section>
 

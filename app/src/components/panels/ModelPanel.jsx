@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getModelInfo } from '../../bridge/settings'
 import { RefreshIcon } from './shared'
+import { t } from '../../i18n'
 
 export default function ModelPanel({ active, modelInfo: modelInfoProp = null }) {
   const [modelInfo, setModelInfo] = useState(modelInfoProp)
@@ -33,7 +34,7 @@ export default function ModelPanel({ active, modelInfo: modelInfoProp = null }) 
   return (
     <section className="ep-pane">
       <div className="ep-card">
-        <h3 className="ep-card-title">当前模型</h3>
+        <h3 className="ep-card-title">{t('当前模型')}</h3>
         <div className="ep-model-display">
           <div className="ep-model-current">
             {current ? (
@@ -41,12 +42,14 @@ export default function ModelPanel({ active, modelInfo: modelInfoProp = null }) 
                 <div className="ep-model-provider">{current.provider}</div>
                 <div className="ep-model-name">{current.model}</div>
                 {current.reasoningEffort ? (
-                  <div className="ep-model-reasoning">推理档位：{current.reasoningEffort}</div>
+                  <div className="ep-model-reasoning">
+                    {t('推理档位：{e}').replace('{e}', current.reasoningEffort)}
+                  </div>
                 ) : null}
               </>
             ) : (
               <div className={modelInfo ? 'ep-empty' : 'ep-model-loading'}>
-                {modelInfo ? '暂无模型信息' : '读取中…'}
+                {modelInfo ? t('暂无模型信息') : t('读取中…')}
               </div>
             )}
           </div>
@@ -57,19 +60,21 @@ export default function ModelPanel({ active, modelInfo: modelInfoProp = null }) 
             disabled={refreshing}
           >
             <RefreshIcon />
-            {refreshing ? '刷新中…' : '刷新'}
+            {refreshing ? t('刷新中…') : t('刷新')}
           </button>
         </div>
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">可用 Provider</h3>
+        <h3 className="ep-card-title">{t('可用 Provider')}</h3>
         {groups.length > 0 ? (
           <div className="ep-groups">
             {groups.map((g) => (
               <span key={g.id || g.name} className="ep-group-chip">
                 {g.name || g.id || '—'}
-                {g.models?.length ? <small>{g.models.length} 个模型</small> : null}
+                {g.models?.length ? (
+                  <small>{t('{n} 个模型').replace('{n}', g.models.length)}</small>
+                ) : null}
               </span>
             ))}
           </div>

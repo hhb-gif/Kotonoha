@@ -7,6 +7,7 @@
 // 数据层为同步 localStorage 操作（bridge/stories），组件内无异步 I/O（浏览目录除外）
 import { useState } from 'react'
 import * as stories from '../bridge/stories'
+import { t } from '../i18n'
 import './SelectScreen.css'
 
 const DEFAULT_PATH = 'E:\\Kotonoha'
@@ -79,7 +80,8 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
 
   const selectedStory = storyList.find((s) => s.id === selectedId) || null
   const saves = selectedId ? stories.listSaves(selectedId) : []
-  const defaultSaveName = `对话 ${saves.length + 1}`
+  // 默认对话名（模板串 {n} 占位，en/ja 语序由语言包控制）
+  const defaultSaveName = t('对话 {n}').replace('{n}', saves.length + 1)
   const canBrowse = typeof window !== 'undefined' && typeof window.__KOTONOHA_PICK_DIR__ === 'function'
 
   function pickStory(id) {
@@ -102,7 +104,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
       const picked = await window.__KOTONOHA_PICK_DIR__()
       if (picked) setStoryPath(String(picked))
     } catch {
-      setStoryError('选择目录失败')
+      setStoryError(t('选择目录失败'))
     } finally {
       setBrowseBusy(false)
     }
@@ -118,9 +120,9 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
       setShowStoryForm(false)
       // 新项目尚无存档 → 默认名「对话 1」，自动展开新对话输入
       setShowSaveForm(true)
-      setSaveName('对话 1')
+      setSaveName(t('对话 {n}').replace('{n}', 1))
     } catch (err) {
-      setStoryError(err.message || '创建项目失败')
+      setStoryError(err.message || t('创建项目失败'))
     }
   }
 
@@ -136,7 +138,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
     const name = saveName.trim() || defaultSaveName
     setBusy(true)
     onNewSave(selectedId, name)
-      .catch(() => setSaveError('开始对话失败'))
+      .catch(() => setSaveError(t('开始对话失败')))
       .finally(() => setBusy(false))
   }
 
@@ -152,9 +154,9 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
       <div className="sel-panel">
         <header className="select-screen-header">
           <button type="button" className="select-back" onClick={onBack}>
-            ← 主菜单
+            {t('← 主菜单')}
           </button>
-          <h2 className="select-screen-title">{mode === 'new' ? '选择项目' : '载入存档'}</h2>
+          <h2 className="select-screen-title">{mode === 'new' ? t('选择项目') : t('载入存档')}</h2>
           <div className="select-header-spacer" />
         </header>
 
@@ -162,18 +164,18 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
           {/* ---- 左列：项目 ---- */}
           <aside className="select-screen-left">
             <div className="sel-col-head">
-              <h3 className="select-section-title">项目</h3>
+              <h3 className="select-section-title">{t('项目')}</h3>
               {mode === 'new' && !showStoryForm && (
                 <button type="button" className="sel-new-btn" onClick={openStoryForm}>
                   <PlusIcon />
-                  新建项目
+                  {t('新建项目')}
                 </button>
               )}
             </div>
 
             {storyList.length === 0 ? (
               <div className="select-empty">
-                {mode === 'new' ? '还没有项目，点击左上角新建' : '还没有任何项目'}
+                {mode === 'new' ? t('还没有项目，点击左上角新建') : t('还没有任何项目')}
               </div>
             ) : (
               <div className="select-list">
@@ -193,8 +195,12 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                       <span className="select-item-path">{s.path}</span>
                     </span>
                     <span className="sel-card-side">
-                      <span className="sel-count">{stories.listSaves(s.id).length} 存档</span>
-                      <span className="select-item-meta">最近 {formatTime(s.lastActiveAt)}</span>
+                      <span className="sel-count">
+                        {t('{n} 存档').replace('{n}', stories.listSaves(s.id).length)}
+                      </span>
+                      <span className="select-item-meta">
+                        {t('最近 {t}').replace('{t}', formatTime(s.lastActiveAt))}
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -205,10 +211,10 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
             {mode === 'new' && showStoryForm && (
               <div className="sel-form-card">
                 <div className="sel-form-row">
-                  <label className="sel-form-label">项目名称</label>
+                  <label className="sel-form-label">{t('项目名称')}</label>
                   <input
                     className="select-input"
-                    placeholder="如：我的故事"
+                    placeholder={t('如：我的故事')}
                     value={storyName}
                     onChange={(e) => setStoryName(e.target.value)}
                     maxLength={30}
@@ -217,28 +223,28 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                 </div>
 
                 <div className="sel-form-row">
-                  <label className="sel-form-label">工作区路径</label>
+                  <label className="sel-form-label">{t('工作区路径')}</label>
                   {canBrowse ? (
                     <div className="sel-path-row">
                       <input
                         className="select-input"
-                        placeholder="工作区路径"
+                        placeholder={t('工作区路径')}
                         value={storyPath}
                         onChange={(e) => setStoryPath(e.target.value)}
                       />
                       <button type="button" className="sel-browse" onClick={handleBrowse} disabled={browseBusy}>
-                        {browseBusy ? '选择中…' : '浏览目录'}
+                        {browseBusy ? t('选择中…') : t('浏览目录')}
                       </button>
                     </div>
                   ) : (
                     <>
                       <input
                         className="select-input"
-                        placeholder="浏览器环境请手动输入路径"
+                        placeholder={t('浏览器环境请手动输入路径')}
                         value={storyPath}
                         onChange={(e) => setStoryPath(e.target.value)}
                       />
-                      <p className="sel-path-hint">浏览器环境请手动输入路径</p>
+                      <p className="sel-path-hint">{t('浏览器环境请手动输入路径')}</p>
                     </>
                   )}
                   <div className="sel-quick-paths">
@@ -254,7 +260,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
 
                 <div className="sel-form-actions">
                   <button type="button" className="sel-cancel" onClick={() => setShowStoryForm(false)}>
-                    取消
+                    {t('取消')}
                   </button>
                   <button
                     type="button"
@@ -262,7 +268,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                     disabled={!storyName.trim() || !storyPath.trim()}
                     onClick={handleCreateStory}
                   >
-                    创建
+                    {t('创建')}
                   </button>
                 </div>
               </div>
@@ -272,14 +278,14 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
           {/* ---- 右列：对话 ---- */}
           <section className="select-screen-right">
             <div className="sel-col-head">
-              <h3 className="select-section-title">对话</h3>
+              <h3 className="select-section-title">{t('对话')}</h3>
             </div>
 
             {!selectedStory ? (
-              <div className="select-empty">在左侧选择一个项目</div>
+              <div className="select-empty">{t('在左侧选择一个项目')}</div>
             ) : saves.length === 0 ? (
               <div className="select-empty">
-                {mode === 'new' ? '该项目还没有对话，点击下方开始新对话' : '该项目暂无对话'}
+                {mode === 'new' ? t('该项目还没有对话，点击下方开始新对话') : t('该项目暂无对话')}
               </div>
             ) : (
               <div className="select-list">
@@ -301,7 +307,9 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                         <span className="select-item-preview">{truncate(sv.preview, 60)}</span>
                       )}
                     </span>
-                    <span className="sel-save-time">更新于 {formatTime(sv.lastActiveAt)}</span>
+                    <span className="sel-save-time">
+                      {t('更新于 {t}').replace('{t}', formatTime(sv.lastActiveAt))}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -315,7 +323,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                     <div className="sel-form-row">
                       <input
                         className="select-input"
-                        placeholder="对话名称"
+                        placeholder={t('对话名称')}
                         value={saveName}
                         onChange={(e) => setSaveName(e.target.value)}
                         maxLength={40}
@@ -325,7 +333,7 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                     {saveError && <div className="select-error">{saveError}</div>}
                     <div className="sel-form-actions">
                       <button type="button" className="sel-cancel" onClick={() => setShowSaveForm(false)}>
-                        取消
+                        {t('取消')}
                       </button>
                       <button
                         type="button"
@@ -333,18 +341,18 @@ export default function SelectScreen({ mode, onPickSave, onNewSave, onBack }) {
                         disabled={busy || !saveName.trim()}
                         onClick={handleNewSave}
                       >
-                        开始对话
+                        {t('开始对话')}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <button type="button" className="sel-new-btn wide" onClick={openSaveForm}>
                     <PlusIcon />
-                    新对话
+                    {t('新对话')}
                   </button>
                 ))
               ) : (
-                <p className="select-hint">选择已有的项目与对话</p>
+                <p className="select-hint">{t('选择已有的项目与对话')}</p>
               )}
             </div>
           </section>

@@ -6,7 +6,9 @@
 //   onFinish      完成/跳过（父组件负责写 kotonoha:onboarding-done 并关闭）
 //   onGoSettings  引导「去设置」按钮（父组件负责打开设置面板）
 import { useEffect, useState } from 'react'
+import { t } from '../i18n'
 
+// 步骤文案存中文原文（即 i18n key），渲染时经 t() 翻译（reload 切语言方案下安全）
 const STEPS = [
   {
     title: '欢迎来到 Kotonoha',
@@ -60,13 +62,13 @@ export default function Onboarding({ open = false, hidden = false, advanceSignal
     <div className={`onb-overlay${hidden ? ' onb-hidden' : ''}`}>
       <div className="onb-card">
         <div className="onb-art">
-          <img src="assets/character.png" alt="言叶" />
+          <img src="assets/character.png" alt={t('言叶')} />
         </div>
         <div className="onb-content" key={step}>
           <span className="onb-step">{step + 1} / {STEPS.length}</span>
-          <h2 className="onb-title">{cur.title}</h2>
-          <p className="onb-body">{cur.body}</p>
-          {cur.hint ? <p className="onb-hint">{cur.hint}</p> : null}
+          <h2 className="onb-title">{t(cur.title)}</h2>
+          <p className="onb-body">{t(cur.body)}</p>
+          {cur.hint ? <p className="onb-hint">{t(cur.hint)}</p> : null}
         </div>
         <div className="onb-footer">
           <div className="onb-dots">
@@ -76,15 +78,15 @@ export default function Onboarding({ open = false, hidden = false, advanceSignal
           </div>
           <div className="onb-actions">
             <button type="button" className="onb-btn onb-skip" onClick={onFinish}>
-              跳过
+              {t('跳过')}
             </button>
             {cur.action ? (
               <button type="button" className="onb-btn onb-primary" onClick={onGoSettings}>
-                去设置
+                {t('去设置')}
               </button>
             ) : (
               <button type="button" className="onb-btn onb-primary" onClick={handleNext}>
-                {isLast ? '开始使用' : '下一步'}
+                {isLast ? t('开始使用') : t('下一步')}
               </button>
             )}
           </div>

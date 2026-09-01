@@ -4,6 +4,7 @@
 //   onClose    关闭回调（点遮罩 / 点 × / 按 ESC 触发）
 //   messages   当前对话消息数组 [{ role:'user'|'model', name, text }]
 import { useEffect } from 'react'
+import { t } from '../i18n'
 import './LogViewer.css'
 
 // 轻量 markdown 清理：去掉代码块围栏 / 反引号 / ** 加粗 / # 标题符 / 链接网址，保留换行
@@ -39,7 +40,7 @@ export default function LogViewer({ open = false, onClose, messages = [] }) {
         className="log-viewer-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="对话记录"
+        aria-label={t('对话记录')}
       >
         <header className="log-viewer-head">
           <h2 className="log-viewer-title">
@@ -67,14 +68,14 @@ export default function LogViewer({ open = false, onClose, messages = [] }) {
                 strokeLinecap="round"
               />
             </svg>
-            <span>对话记录</span>
+            <span>{t('对话记录')}</span>
           </h2>
-          <span className="log-viewer-count">共 {count} 条消息</span>
+          <span className="log-viewer-count">{t('共 {n} 条消息').replace('{n}', count)}</span>
           <button
             type="button"
             className="log-viewer-close"
             onClick={onClose}
-            aria-label="关闭对话记录"
+            aria-label={t('关闭对话记录')}
           >
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
               <path
@@ -90,11 +91,11 @@ export default function LogViewer({ open = false, onClose, messages = [] }) {
 
         <div className="log-viewer-list">
           {count === 0 ? (
-            <div className="log-viewer-empty">还没有对话内容</div>
+            <div className="log-viewer-empty">{t('还没有对话内容')}</div>
           ) : (
             messages.map((m, i) => {
               const isUser = m.role === 'user'
-              const name = isUser ? '你' : m.name || '模型'
+              const name = isUser ? t('你') : m.name || t('模型')
               return (
                 <article
                   key={i}
@@ -102,7 +103,7 @@ export default function LogViewer({ open = false, onClose, messages = [] }) {
                   style={{ animationDelay: `${Math.min(i, MAX_STAGGER) * 30}ms` }}
                 >
                   <div className="log-viewer-avatar" aria-hidden="true">
-                    {isUser ? '你' : (m.name || '模').charAt(0)}
+                    {isUser ? t('你') : (m.name || t('模型')).charAt(0)}
                   </div>
                   <div className="log-viewer-item-body">
                     <div className="log-viewer-item-name">{name}</div>
@@ -114,7 +115,7 @@ export default function LogViewer({ open = false, onClose, messages = [] }) {
           )}
         </div>
 
-        <footer className="log-viewer-footer">ESC 或点击 × 关闭</footer>
+        <footer className="log-viewer-footer">{t('ESC 或点击 × 关闭')}</footer>
       </div>
     </div>
   )

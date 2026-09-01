@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { ToolSourceBadge } from './shared'
+import { t } from '../../i18n'
 
 export default function SkillsPanel({ active, context, skills = {}, skillCatalog = [], onToggleSkill, showMsg }) {
   // 后端工具目录（tools.list）+ 启停占位
@@ -138,11 +139,11 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
   // 切换工具集（多选 chip）：乐观更新，失败回滚
   async function handleToggleToolset(name) {
     if (!sid) {
-      showMsg('当前没有可用会话，无法切换工具集')
+      showMsg(t('当前没有可用会话，无法切换工具集'))
       return
     }
     if (!bridge.setActiveToolsets) {
-      showMsg('工具集接口未就绪（等待 bridge 合入）')
+      showMsg(t('工具集接口未就绪（等待 bridge 合入）'))
       return
     }
     const prev = activeToolsets
@@ -151,7 +152,7 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
     try {
       const res = await bridge.setActiveToolsets(sid, next)
       if (res?.ok) {
-        showMsg(next.length ? `工具集已更新：${next.join(' / ')}` : '工具集已清空')
+        showMsg(next.length ? `工具集已更新：${next.join(' / ')}` : t('工具集已清空'))
       } else {
         setActiveToolsets(prev)
         showMsg(`工具集保存失败：${res?.error || '未知错误'}`)
@@ -172,13 +173,13 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
   // 批准待审核技能（skills.approve）
   async function handleSkillApprove(id) {
     if (!bridge.approveSkill) {
-      showMsg('技能批准接口未就绪（等待 bridge 合入）')
+      showMsg(t('技能批准接口未就绪（等待 bridge 合入）'))
       return
     }
     setSkillActionBusy(id)
     try {
       const res = await bridge.approveSkill(id)
-      showMsg(res?.ok ? '技能已批准，可进入执行列表' : `批准失败：${res?.error || '未知错误'}`)
+      showMsg(res?.ok ? t('技能已批准，可进入执行列表') : `批准失败：${res?.error || '未知错误'}`)
       if (res?.ok) refreshSkillList()
     } catch (err) {
       showMsg(`批准失败：${err.message}`)
@@ -190,13 +191,13 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
   // 拒绝待审核技能（skills.reject）
   async function handleSkillReject(id) {
     if (!bridge.rejectSkill) {
-      showMsg('技能拒绝接口未就绪（等待 bridge 合入）')
+      showMsg(t('技能拒绝接口未就绪（等待 bridge 合入）'))
       return
     }
     setSkillActionBusy(id)
     try {
       const res = await bridge.rejectSkill(id)
-      showMsg(res?.ok ? '技能已拒绝' : `拒绝失败：${res?.error || '未知错误'}`)
+      showMsg(res?.ok ? t('技能已拒绝') : `拒绝失败：${res?.error || '未知错误'}`)
       if (res?.ok) refreshSkillList()
     } catch (err) {
       showMsg(`拒绝失败：${err.message}`)
@@ -214,9 +215,9 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
   return (
     <section className="ep-pane">
       <div className="ep-card">
-        <h3 className="ep-card-title">工具集切换</h3>
+        <h3 className="ep-card-title">{t('工具集切换')}</h3>
         {toolsetsLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : toolsets.length ? (
           <div className="ep-toolsets">
             {toolsets.map((name) => (
@@ -232,12 +233,12 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
             ))}
           </div>
         ) : (
-          <div className="ep-empty">工具集接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('工具集接口未就绪（等待 bridge 合入）')}</div>
         )}
         {!context?.sessionId ? (
-          <div className="ep-note">当前没有可用会话，工具集切换已禁用。</div>
+          <div className="ep-note">{t('当前没有可用会话，工具集切换已禁用。')}</div>
         ) : (
-          <div className="ep-note">选择当前会话启用的工具集（core/dev/web/memory），保存到后端。</div>
+          <div className="ep-note">{t('选择当前会话启用的工具集（core/dev/web/memory），保存到后端。')}</div>
         )}
       </div>
 
@@ -263,7 +264,7 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
               </div>
               <div className="ep-skill-desc">{s.desc}</div>
               {s.id === 'approval' && (
-                <div className="ep-skill-note">越界操作审批：开=自动放行，关=自动拒绝</div>
+                <div className="ep-skill-note">{t('越界操作审批：开=自动放行，关=自动拒绝')}</div>
               )}
             </div>
           )
@@ -271,9 +272,9 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">工具目录（后端）</h3>
+        <h3 className="ep-card-title">{t('工具目录（后端）')}</h3>
         {toolsLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : tools && tools.length ? (
           <div className="ep-tools-list">
             {tools.map((t) => (
@@ -302,15 +303,15 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
             ))}
           </div>
         ) : (
-          <div className="ep-empty">后端未提供工具列表接口</div>
+          <div className="ep-empty">{t('后端未提供工具列表接口')}</div>
         )}
-        <div className="ep-note">工具启停开关为占位展示，仅本地预览，不写入后端。</div>
+        <div className="ep-note">{t('工具启停开关为占位展示，仅本地预览，不写入后端。')}</div>
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">待批准技能</h3>
+        <h3 className="ep-card-title">{t('待批准技能')}</h3>
         {skillListLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : skillList ? (
           pendingSkills.length ? (
             <div className="ep-skill-pending">
@@ -329,7 +330,7 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
                       onClick={() => handleSkillApprove(s.id)}
                       disabled={skillActionBusy !== null}
                     >
-                      {skillActionBusy === s.id ? '处理中…' : '批准'}
+                      {skillActionBusy === s.id ? t('处理中…') : t('批准')}
                     </button>
                     <button
                       type="button"
@@ -337,24 +338,24 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
                       onClick={() => handleSkillReject(s.id)}
                       disabled={skillActionBusy !== null}
                     >
-                      拒绝
+                      {t('拒绝')}
                     </button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="ep-empty">暂无待批准技能</div>
+            <div className="ep-empty">{t('暂无待批准技能')}</div>
           )
         ) : (
-          <div className="ep-empty">技能列表接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('技能列表接口未就绪（等待 bridge 合入）')}</div>
         )}
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">已批准技能</h3>
+        <h3 className="ep-card-title">{t('已批准技能')}</h3>
         {skillListLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : skillList ? (
           approvedSkills.length ? (
             <div className="ep-skill-pending">
@@ -366,22 +367,22 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
                       <span className="ep-skill-pending-desc">{s.description || s.desc}</span>
                     ) : null}
                   </div>
-                  <span className="ep-badge on">已批准</span>
+                  <span className="ep-badge on">{t('已批准')}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="ep-empty">暂无已批准技能</div>
+            <div className="ep-empty">{t('暂无已批准技能')}</div>
           )
         ) : (
-          <div className="ep-empty">技能列表接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('技能列表接口未就绪（等待 bridge 合入）')}</div>
         )}
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">言叶记得的事</h3>
+        <h3 className="ep-card-title">{t('言叶记得的事')}</h3>
         {memoriesLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : memories ? (
           memories.length ? (
             <div className="ep-memories">
@@ -394,10 +395,10 @@ export default function SkillsPanel({ active, context, skills = {}, skillCatalog
               ))}
             </div>
           ) : (
-            <div className="ep-empty">还没有记忆，多聊聊就会有的～</div>
+            <div className="ep-empty">{t('还没有记忆，多聊聊就会有的～')}</div>
           )
         ) : (
-          <div className="ep-empty">记忆接口未就绪（等待 bridge 合入）</div>
+          <div className="ep-empty">{t('记忆接口未就绪（等待 bridge 合入）')}</div>
         )}
       </div>
     </section>

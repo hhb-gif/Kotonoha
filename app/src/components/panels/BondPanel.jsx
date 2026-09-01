@@ -5,8 +5,10 @@
 import { useEffect, useRef, useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { formatTime } from './shared'
+import { t } from '../../i18n'
 
 // 等级阈值与名称（与后端 bond.ts 的 4 档划分一致：0-24/25-59/60-89/90-100）
+// 名称存中文原文（即 i18n key），渲染时经 t() 翻译
 const LEVEL_NAMES = ['陌生', '熟悉', '信赖', '羁绊']
 const LEVEL_THRESHOLDS = [25, 60, 90]
 // localStorage 键：记录上次见到的好感度等级（升级徽章用）
@@ -89,28 +91,30 @@ export default function BondPanel({ active }) {
 
   // 好感度进度（0~100，防御式 clamp）
   const points = Math.min(100, Math.max(0, Number(bond?.points) || 0))
-  // 距下一等级提示：满级显示「羁绊已达最深」
+  // 距下一等级提示：满级显示「羁绊已达最深」（模板串 {name}/{n} 占位，en/ja 语序由语言包控制）
   const nextHint = bond
     ? bond.level >= 3 || points >= 100
-      ? '羁绊已达最深'
-      : `距离『${LEVEL_NAMES[bond.level + 1] || '熟悉'}』还差 ${(LEVEL_THRESHOLDS[bond.level] ?? 25) - points} 点`
+      ? t('羁绊已达最深')
+      : t('距离『{name}』还差 {n} 点')
+          .replace('{name}', t(LEVEL_NAMES[bond.level + 1] || '熟悉'))
+          .replace('{n}', (LEVEL_THRESHOLDS[bond.level] ?? 25) - points)
     : null
 
   return (
     <section className="ep-pane">
       {/* 升级徽章（顶部横幅，8s 自动消失） */}
-      {showBadge && bond && <div className="ep-bond-badge">✨ 羁绊提升了！</div>}
+      {showBadge && bond && <div className="ep-bond-badge">{t('✨ 羁绊提升了！')}</div>}
 
       {/* ---- 好感度区 ---- */}
       <div className="ep-card">
-        <h3 className="ep-card-title">好感度</h3>
+        <h3 className="ep-card-title">{t('好感度')}</h3>
         {loading && !bond ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : bond ? (
           <>
             {/* 等级大字（按等级换色：陌生=灰 / 熟悉=蓝 / 信赖=紫 / 羁绊=金粉渐变） */}
             <div className="ep-bond-level-wrap">
-              <span className={`ep-bond-level ep-bond-lv${bond.level}`}>{bond.levelName}</span>
+              <span className={`ep-bond-level ep-bond-lv${bond.level}`}>{t(bond.levelName)}</span>
             </div>
             {/* 进度条（points / 100） */}
             <div className="ep-bond-bar" role="progressbar" aria-valuenow={points} aria-valuemin={0} aria-valuemax={100}>
@@ -122,22 +126,22 @@ export default function BondPanel({ active }) {
             </div>
           </>
         ) : (
-          <div className="ep-empty">羁绊接口未就绪（等待后端合入）</div>
+          <div className="ep-empty">{t('羁绊接口未就绪（等待后端合入）')}</div>
         )}
       </div>
 
       {/* ---- 互动数据 ---- */}
       <div className="ep-card">
-        <h3 className="ep-card-title">互动数据</h3>
+        <h3 className="ep-card-title">{t('互动数据')}</h3>
         {bond ? (
           <div className="ep-bond-stats">
             <div className="ep-bond-stat">
               <span className="ep-bond-stat-num">{bond.interactions}</span>
-              <span className="ep-bond-stat-label">累计对话轮数</span>
+              <span className="ep-bond-stat-label">{t('累计对话轮数')}</span>
             </div>
             <div className="ep-bond-stat">
               <span className="ep-bond-stat-num">+{bond.todayGain}</span>
-              <span className="ep-bond-stat-label">今日增长</span>
+              <span className="ep-bond-stat-label">{t('今日增长')}</span>
             </div>
           </div>
         ) : (
@@ -147,14 +151,14 @@ export default function BondPanel({ active }) {
 
       {/* ---- 共同回忆时间线 ---- */}
       <div className="ep-card">
-        <h3 className="ep-card-title">共同回忆</h3>
+        <h3 className="ep-card-title">{t('共同回忆')}</h3>
         {memories === null ? (
-          <div className="ep-empty">回忆接口未就绪（等待后端合入）</div>
+          <div className="ep-empty">{t('回忆接口未就绪（等待后端合入）')}</div>
         ) : memories.length ? (
           // 竖向时间线：左侧竖线+节点圆点，右侧日期 + 「entity · relation」 + detail（旧→新）
           <div className="ep-bond-timeline">
             {memories.map((m, i) => {
-              const entity = m?.entity || m?.subject || '言叶'
+              const entity = m?.entity || m?.subject || t('言叶')
               const relation = m?.relation || ''
               const detail = m?.detail || m?.content || ''
               return (
@@ -175,7 +179,7 @@ export default function BondPanel({ active }) {
             })}
           </div>
         ) : (
-          <div className="ep-empty">还没有共同回忆，多聊聊就会有的～</div>
+          <div className="ep-empty">{t('还没有共同回忆，多聊聊就会有的～')}</div>
         )}
       </div>
     </section>

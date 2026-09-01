@@ -7,6 +7,7 @@
 //   lastStoryName / lastSaveName  最近故事与存档名（「继续」副文本）
 //   onSettings   打开设置面板
 import './MainMenu.css'
+import { t } from '../i18n'
 
 const iconProps = {
   viewBox: '0 0 24 24',
@@ -71,7 +72,7 @@ export default function MainMenu({
             <IconContinue />
           </span>
           <span className="main-menu-item-body">
-            <span className="main-menu-item-label">继续</span>
+            <span className="main-menu-item-label">{t('继续')}</span>
             {canContinue ? (
               <span className="main-menu-item-hint">
                 {lastStoryName} · {lastSaveName}
@@ -85,8 +86,8 @@ export default function MainMenu({
             <IconNewGame />
           </span>
           <span className="main-menu-item-body">
-            <span className="main-menu-item-label">新游戏</span>
-            <span className="main-menu-item-desc">开始一段新的对话</span>
+            <span className="main-menu-item-label">{t('新游戏')}</span>
+            <span className="main-menu-item-desc">{t('开始一段新的对话')}</span>
           </span>
           <span className="main-menu-item-arrow" aria-hidden="true">›</span>
         </button>
@@ -95,8 +96,8 @@ export default function MainMenu({
             <IconLoad />
           </span>
           <span className="main-menu-item-body">
-            <span className="main-menu-item-label">载入</span>
-            <span className="main-menu-item-desc">选择已有的项目与对话</span>
+            <span className="main-menu-item-label">{t('载入')}</span>
+            <span className="main-menu-item-desc">{t('选择已有的项目与对话')}</span>
           </span>
           <span className="main-menu-item-arrow" aria-hidden="true">›</span>
         </button>
@@ -105,8 +106,8 @@ export default function MainMenu({
             <IconSettings />
           </span>
           <span className="main-menu-item-body">
-            <span className="main-menu-item-label">设置</span>
-            <span className="main-menu-item-desc">文本速度、场景与模型</span>
+            <span className="main-menu-item-label">{t('设置')}</span>
+            <span className="main-menu-item-desc">{t('文本速度、场景与模型')}</span>
           </span>
           <span className="main-menu-item-arrow" aria-hidden="true">›</span>
         </button>

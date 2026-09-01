@@ -3,11 +3,13 @@
 // props:
 //   disabled  模型思考中时禁用
 //   onLog / onSettings
+import { t } from '../i18n'
+
 export default function InputBar({ disabled = false, onLog, onSettings }) {
   return (
     <div className="input-bar">
-      <button className="btn" onClick={onLog} disabled={disabled}>记录</button>
-      <button className="btn" onClick={onSettings}>设置</button>
+      <button className="btn" onClick={onLog} disabled={disabled}>{t('记录')}</button>
+      <button className="btn" onClick={onSettings}>{t('设置')}</button>
     </div>
   )
 }

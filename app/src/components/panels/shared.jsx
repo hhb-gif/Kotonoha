@@ -2,6 +2,7 @@
 // 从原 EscapePanel.jsx 内联实现集中迁移：图标（svgProps 统一描边风格）、
 // formatTime / truncateSession / downloadText、story·save 解析、工具来源徽章。
 import * as stories from '../../bridge/stories'
+import { t } from '../../i18n'
 
 export const svgProps = {
   width: 24,
@@ -174,6 +175,7 @@ export function resolveSave() {
 }
 
 // ---- U2 新增：工具来源徽章（后端返回 kind 时优先，否则按名称前缀启发式判断）----
+// label 存中文原文（i18n key），渲染时经 t() 翻译
 export const SOURCE_META = {
   builtin: { label: '内置', cls: 'ep-src-builtin' },
   checkpoint: { label: 'checkpoint', cls: 'ep-src-checkpoint' },
@@ -195,5 +197,5 @@ export function toolSourceKind(tool) {
 export function ToolSourceBadge({ tool }) {
   const kind = toolSourceKind(tool)
   const meta = SOURCE_META[kind] || SOURCE_META.builtin
-  return <span className={`ep-src-badge ${meta.cls}`}>{meta.label}</span>
+  return <span className={`ep-src-badge ${meta.cls}`}>{t(meta.label)}</span>
 }

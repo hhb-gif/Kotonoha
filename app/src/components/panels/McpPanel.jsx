@@ -4,17 +4,18 @@
 // 自包含：MCP 状态的加载、展示与操作
 import { useCallback, useEffect, useState } from 'react'
 import bridge from '../../bridge/bridge'
+import { t } from '../../i18n'
 
 // 添加表单初始值（type 决定渲染 stdio 字段组还是 sse url 字段）
 const EMPTY_FORM = { id: '', type: 'stdio', command: '', args: '', url: '' }
 
-/** 运行态 status → 中文文案 */
+/** 运行态 status → 文案（经 t() 翻译，未收录状态原样回落） */
 function statusText(status) {
-  if (status === 'connected') return '已连接'
-  if (status === 'connecting') return '连接中'
-  if (status === 'error') return '错误'
-  if (status === 'disconnected') return '未连接'
-  return status || '未知'
+  if (status === 'connected') return t('已连接')
+  if (status === 'connecting') return t('连接中')
+  if (status === 'error') return t('错误')
+  if (status === 'disconnected') return t('未连接')
+  return t(status || '未知')
 }
 
 export default function McpPanel({ active }) {
@@ -79,15 +80,15 @@ export default function McpPanel({ active }) {
     const id = form.id.trim()
     // 必填校验，错误就地提示
     if (!id) {
-      setFormError('请填写服务器 id')
+      setFormError(t('请填写服务器 id'))
       return
     }
     if (form.type === 'stdio' && !form.command.trim()) {
-      setFormError('stdio 类型必须填写 command')
+      setFormError(t('stdio 类型必须填写 command'))
       return
     }
     if (form.type === 'sse' && !form.url.trim()) {
-      setFormError('sse 类型必须填写 url')
+      setFormError(t('sse 类型必须填写 url'))
       return
     }
     setFormError('')
@@ -108,7 +109,7 @@ export default function McpPanel({ active }) {
       setToast({ kind: 'ok', text: `服务器「${id}」已添加` })
     } else {
       // 添加失败（校验/注册/连接）→ 表单内展示错误
-      setFormError(res?.error || '添加失败')
+      setFormError(res?.error || t('添加失败'))
     }
     loadLists()
   }
@@ -162,7 +163,7 @@ export default function McpPanel({ active }) {
       )}
 
       <div className="ep-card">
-        <h3 className="ep-card-title">我的 MCP 服务器</h3>
+        <h3 className="ep-card-title">{t('我的 MCP 服务器')}</h3>
 
         {/* 添加入口 + 折叠表单 */}
         <div className="ep-act-row">
@@ -175,7 +176,7 @@ export default function McpPanel({ active }) {
             }}
             disabled={busy}
           >
-            {formOpen ? '收起表单' : '＋ 添加服务器'}
+            {formOpen ? t('收起表单') : t('＋ 添加服务器')}
           </button>
         </div>
 
@@ -184,7 +185,7 @@ export default function McpPanel({ active }) {
             <div className="ep-inline-form">
               <input
                 className="ep-input"
-                placeholder="服务器 id（必填，如 my-filesystem）"
+                placeholder={t('服务器 id（必填，如 my-filesystem）')}
                 value={form.id}
                 onChange={(e) => setForm({ ...form, id: e.target.value })}
               />
@@ -203,7 +204,7 @@ export default function McpPanel({ active }) {
                 <div className="ep-inline-form">
                   <input
                     className="ep-input"
-                    placeholder="command（必填，如 npx）"
+                    placeholder={t('command（必填，如 npx）')}
                     value={form.command}
                     onChange={(e) => setForm({ ...form, command: e.target.value })}
                   />
@@ -211,7 +212,7 @@ export default function McpPanel({ active }) {
                 <div className="ep-inline-form">
                   <input
                     className="ep-input"
-                    placeholder="args（空格分隔，可空，如 -y @modelcontextprotocol/server-filesystem E:/dir）"
+                    placeholder={t('args（空格分隔，可空，如 -y @modelcontextprotocol/server-filesystem E:/dir）')}
                     value={form.args}
                     onChange={(e) => setForm({ ...form, args: e.target.value })}
                   />
@@ -221,7 +222,7 @@ export default function McpPanel({ active }) {
               <div className="ep-inline-form">
                 <input
                   className="ep-input"
-                  placeholder="url（必填，如 http://localhost:3000/sse）"
+                  placeholder={t('url（必填，如 http://localhost:3000/sse）')}
                   value={form.url}
                   onChange={(e) => setForm({ ...form, url: e.target.value })}
                 />
@@ -235,7 +236,7 @@ export default function McpPanel({ active }) {
                 onClick={submitAdd}
                 disabled={busy}
               >
-                {busy ? '处理中…' : '添加并连接'}
+                {busy ? t('处理中…') : t('添加并连接')}
               </button>
             </div>
           </div>
@@ -243,7 +244,7 @@ export default function McpPanel({ active }) {
 
         {/* 用户服务器列表：状态徽章 + 连接/断开 + 删除 */}
         {mcpLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : userServers.length > 0 ? (
           <div className="ep-mcp-list">
             {userServers.map((srv) => {
@@ -259,8 +260,8 @@ export default function McpPanel({ active }) {
                       className={`ep-mcp-state${connected ? ' on' : ''}`}
                       title={srv.status === 'error' && srv.error ? srv.error : undefined}
                     >
-                      {srv.enabled === false ? '已停用' : statusText(srv.status)}
-                      {srv.tools?.length > 0 ? ` · ${srv.tools.length} 工具` : ''}
+                      {srv.enabled === false ? t('已停用') : statusText(srv.status)}
+                      {srv.tools?.length > 0 ? ` · ${t('{n} 工具').replace('{n}', srv.tools.length)}` : ''}
                     </span>
                     <button
                       type="button"
@@ -268,7 +269,7 @@ export default function McpPanel({ active }) {
                       onClick={() => handleToggle(srv)}
                       disabled={busy}
                     >
-                      {srv.enabled === false ? '连接' : '断开'}
+                      {srv.enabled === false ? t('连接') : t('断开')}
                     </button>
                     <button
                       type="button"
@@ -277,7 +278,7 @@ export default function McpPanel({ active }) {
                       onClick={() => handleRemove(srv)}
                       disabled={busy}
                     >
-                      删除
+                      {t('删除')}
                     </button>
                   </div>
                 </div>
@@ -285,21 +286,21 @@ export default function McpPanel({ active }) {
             })}
           </div>
         ) : (
-          <div className="ep-empty">还没有添加自定义服务器</div>
+          <div className="ep-empty">{t('还没有添加自定义服务器')}</div>
         )}
         <div className="ep-note">
-          配置保存在本地 settings 表；连接失败的服务器下次启动会自动重试。
+          {t('配置保存在本地 settings 表；连接失败的服务器下次启动会自动重试。')}
         </div>
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">内置服务器（只读）</h3>
+        <h3 className="ep-card-title">{t('内置服务器（只读）')}</h3>
         {mcpLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : builtinServers?.length ? (
           <div className="ep-mcp-list">
             {builtinServers.map((it, i) => {
-              const name = it.name || it.serverName || it.id || `服务器 #${i + 1}`
+              const name = it.name || it.serverName || it.id || t('服务器 #{n}').replace('{n}', i + 1)
               const connected =
                 it.connected === true || it.status === 'connected' || it.ok === true
               return (
@@ -309,16 +310,16 @@ export default function McpPanel({ active }) {
                     {it.type ? <span className="ep-mcp-type">{it.type}</span> : null}
                   </div>
                   <span className={`ep-mcp-state${connected ? ' on' : ''}`}>
-                    {connected ? '已连接' : statusText(it.status)}
+                    {connected ? t('已连接') : statusText(it.status)}
                   </span>
                 </div>
               )
             })}
           </div>
         ) : showLegacyEmpty ? (
-          <div className="ep-empty">当前环境未提供 MCP 服务接口</div>
+          <div className="ep-empty">{t('当前环境未提供 MCP 服务接口')}</div>
         ) : (
-          <div className="ep-empty">无内置服务器运行态</div>
+          <div className="ep-empty">{t('无内置服务器运行态')}</div>
         )}
       </div>
     </section>

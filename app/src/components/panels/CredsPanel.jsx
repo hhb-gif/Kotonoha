@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { RefreshIcon } from './shared'
+import { t } from '../../i18n'
 
 export default function CredsPanel({ active }) {
   const [creds, setCreds] = useState(null)
@@ -70,7 +71,7 @@ export default function CredsPanel({ active }) {
     <section className="ep-pane">
       <div className="ep-card">
         <div className="ep-creds-head">
-          <h3 className="ep-card-title">凭据状态</h3>
+          <h3 className="ep-card-title">{t('凭据状态')}</h3>
           <button
             type="button"
             className="ep-btn ep-act-btn"
@@ -78,18 +79,18 @@ export default function CredsPanel({ active }) {
             disabled={credsLoading}
           >
             <RefreshIcon />
-            {credsLoading ? '刷新中…' : '刷新'}
+            {credsLoading ? t('刷新中…') : t('刷新')}
           </button>
         </div>
         {credsLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : creds && Object.keys(creds).length ? (
           <div className="ep-creds-list">
             {Object.entries(creds).map(([ref, info]) => (
               <div key={ref} className="ep-creds-item">
                 <span className="ep-creds-ref ep-mono">{ref}</span>
                 <span className={`ep-badge${info?.configured ? ' on' : ''}`}>
-                  {info?.configured ? '已配置' : '未配置'}
+                  {info?.configured ? t('已配置') : t('未配置')}
                 </span>
                 {info?.source ? (
                   <span className="ep-creds-source">
@@ -102,29 +103,29 @@ export default function CredsPanel({ active }) {
             ))}
           </div>
         ) : (
-          <div className="ep-empty">无凭据信息</div>
+          <div className="ep-empty">{t('无凭据信息')}</div>
         )}
       </div>
 
       <div className="ep-card">
-        <h3 className="ep-card-title">审批规则（只读）</h3>
+        <h3 className="ep-card-title">{t('审批规则（只读）')}</h3>
         {rulesLoading ? (
-          <div className="ep-model-loading">读取中…</div>
+          <div className="ep-model-loading">{t('读取中…')}</div>
         ) : rules && rules.length ? (
           <div className="ep-rules-list">
             {rules.map((r, i) => (
               <div key={i} className="ep-rules-item">
                 <span className="ep-rules-tool ep-mono">
-                  {r.tool === '*' ? '默认（*）' : r.tool}
+                  {r.tool === '*' ? t('默认（*）') : r.tool}
                 </span>
                 <span className={`ep-badge${r.level === 'allow' ? ' on' : ''}`}>
-                  {r.level === 'allow' ? '允许' : r.level === 'ask' ? '询问' : r.level === 'deny' ? '拒绝' : r.level}
+                  {r.level === 'allow' ? t('允许') : r.level === 'ask' ? t('询问') : r.level === 'deny' ? t('拒绝') : r.level}
                 </span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="ep-empty">后端未提供审批规则接口</div>
+          <div className="ep-empty">{t('后端未提供审批规则接口')}</div>
         )}
       </div>
     </section>

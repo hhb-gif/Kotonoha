@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { resolveStory } from './shared'
+import { t } from '../../i18n'
 
 export default function GitPanel({ active, context, showMsg }) {
   const [gitLoading, setGitLoading] = useState(false)
@@ -20,9 +21,9 @@ export default function GitPanel({ active, context, showMsg }) {
     try {
       const res = await bridge.getGitStatus()
       if (res?.ok) {
-        setGitOutput(res.output || '（无改动）')
+        setGitOutput(res.output || t('（无改动）'))
       } else {
-        setGitError(res?.error || '无法获取 Git 状态')
+        setGitError(res?.error || t('无法获取 Git 状态'))
       }
     } catch (err) {
       setGitError(err.message)
@@ -37,7 +38,7 @@ export default function GitPanel({ active, context, showMsg }) {
       await bridge.sendCommandToAgent(
         '请执行 git add -A 并提交，提交信息简洁描述当前改动，先 git status 和 git diff 看看改了什么'
       )
-      showMsg('已交给言叶执行提交，结果将显示在对话中')
+      showMsg(t('已交给言叶执行提交，结果将显示在对话中'))
     } catch (err) {
       showMsg(`发送失败：${err.message}`)
     } finally {
@@ -49,7 +50,7 @@ export default function GitPanel({ active, context, showMsg }) {
     setGitBusy(true)
     try {
       await bridge.sendCommandToAgent('请执行 git log --oneline -10 并简要汇报')
-      showMsg('已交给言叶，最近提交将显示在对话中')
+      showMsg(t('已交给言叶，最近提交将显示在对话中'))
     } catch (err) {
       showMsg(`发送失败：${err.message}`)
     } finally {
@@ -62,9 +63,9 @@ export default function GitPanel({ active, context, showMsg }) {
   return (
     <section className="ep-pane">
       <div className="ep-card">
-        <h3 className="ep-card-title">Git 控制</h3>
+        <h3 className="ep-card-title">{t('Git 控制')}</h3>
         <div className="ep-row">
-          <span className="ep-label">工作区</span>
+          <span className="ep-label">{t('工作区')}</span>
           <span className="ep-value ep-path">{workspacePath}</span>
         </div>
         <div className="ep-act-row">
@@ -74,7 +75,7 @@ export default function GitPanel({ active, context, showMsg }) {
             onClick={handleGitStatus}
             disabled={gitLoading || gitBusy}
           >
-            {gitLoading ? '读取中…' : 'Git 状态'}
+            {gitLoading ? t('读取中…') : t('Git 状态')}
           </button>
           <button
             type="button"
@@ -82,7 +83,7 @@ export default function GitPanel({ active, context, showMsg }) {
             onClick={handleGitCommit}
             disabled={gitBusy || gitLoading}
           >
-            {gitBusy ? '处理中…' : '提交当前改动'}
+            {gitBusy ? t('处理中…') : t('提交当前改动')}
           </button>
           <button
             type="button"
@@ -90,17 +91,17 @@ export default function GitPanel({ active, context, showMsg }) {
             onClick={handleGitLog}
             disabled={gitBusy || gitLoading}
           >
-            查看最近提交
+            {t('查看最近提交')}
           </button>
         </div>
         <div className="ep-note">
-          「提交当前改动」与「查看最近提交」会交给言叶在会话中执行，结果显示在对话里。
+          {t('「提交当前改动」与「查看最近提交」会交给言叶在会话中执行，结果显示在对话里。')}
         </div>
       </div>
 
       {(gitOutput || gitError) && (
         <div className="ep-card">
-          <h3 className="ep-card-title">Git 状态输出</h3>
+          <h3 className="ep-card-title">{t('Git 状态输出')}</h3>
           {gitError ? (
             <pre className="ep-output ep-output-err">{gitError}</pre>
           ) : (

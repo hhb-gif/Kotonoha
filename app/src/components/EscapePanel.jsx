@@ -37,8 +37,10 @@ import CommandsPanel from './panels/CommandsPanel'
 import CredsPanel from './panels/CredsPanel'
 import BondPanel from './panels/BondPanel'
 import StatsPanel from './panels/StatsPanel'
+import { t } from '../i18n'
 import './EscapePanel.css'
 
+// 页签 label 存中文原文（即 i18n key），渲染时经 t() 翻译（reload 切语言方案下安全）
 const TABS = [
   { id: 'save', label: '存档', icon: <BookmarkIcon /> },
   { id: 'model', label: '模型', icon: <ChipIcon /> },
@@ -94,26 +96,27 @@ export default function EscapePanel({
         className="ep-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="角色面板"
+        aria-label={t('角色面板')}
       >
         <header className="ep-head">
-          <h2 className="ep-title">角色面板</h2>
-          <button type="button" className="ep-close" onClick={onClose} aria-label="关闭">
+          <h2 className="ep-title">{t('角色面板')}</h2>
+          <button type="button" className="ep-close" onClick={onClose} aria-label={t('关闭（按钮）')}>
             ×
           </button>
         </header>
 
         <div className="ep-body">
-          <nav className="ep-nav" aria-label="面板分类">
-            {TABS.map((t) => (
+          <nav className="ep-nav" aria-label={t('面板分类')}>
+            {/* 注意：lambda 参数用 tb，避免遮蔽 state 变量 tab 与导入的 t() 翻译函数 */}
+            {TABS.map((tb) => (
               <button
-                key={t.id}
+                key={tb.id}
                 type="button"
-                className={`ep-nav-btn${tab === t.id ? ' active' : ''}`}
-                onClick={() => setTab(t.id)}
+                className={`ep-nav-btn${tab === tb.id ? ' active' : ''}`}
+                onClick={() => setTab(tb.id)}
               >
-                {t.icon}
-                <span>{t.label}</span>
+                {tb.icon}
+                <span>{t(tb.label)}</span>
               </button>
             ))}
           </nav>
@@ -147,13 +150,13 @@ export default function EscapePanel({
 
         <footer className="ep-actions">
           <button type="button" className="ep-btn ep-btn-primary" onClick={onSave}>
-            保存当前进度
+            {t('保存当前进度')}
           </button>
           <button type="button" className="ep-btn ep-btn-secondary" onClick={onBackToMenu}>
-            返回主界面
+            {t('返回主界面')}
           </button>
           <button type="button" className="ep-btn ep-btn-text" onClick={onClose}>
-            关闭
+            {t('关闭（按钮）')}
           </button>
         </footer>
       </div>

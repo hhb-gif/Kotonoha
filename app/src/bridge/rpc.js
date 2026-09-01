@@ -62,6 +62,12 @@ export const archiveSession = (sessionId) => archiveRpc({ sessionId })
 /** 恢复归档会话（session.unarchive）：payload { sessionId } → value { ok:true }。 */
 export const unarchiveSession = (sessionId) => unarchiveRpc({ sessionId })
 
+const historyRpc = makeApi('session.history', { guard: needSid, map: (v) => ({ events: v?.events || [] }) })
+/** 会话历史（session.history）：payload { sessionId } → value { events:[{event:{type,data}}] }（原样透传 + 容错）。 */
+export function getSessionHistory(sessionId) {
+  return historyRpc({ sessionId: sessionId || bridgeState?.sessionId })
+}
+
 /** 已归档会话列表（session.listArchived）：value { sessions:[SessionRecord…] }。 */
 export const listArchivedSessions = makeApi('session.listArchived', { map: (v) => ({ sessions: v?.sessions || [] }) })
 

@@ -1,8 +1,10 @@
-// panels/SessionPanel.jsx —— 会话页签：搜索 / 当前会话（fork·停止）/ 重命名 / 导出·归档·压缩
+// panels/SessionPanel.jsx —— 会话页签：搜索 / 当前会话（fork·停止）/ 重命名 / 导出·归档·压缩·时间线
 // 自包含：fork/rename/export/archive/compress/search/interrupt 的状态与操作
+// 时间线（v0.2.5 D1）：「会话操作」排入口按钮 → 全屏弹层 TimelinePanel 回放当前会话历史
 import { useState } from 'react'
 import bridge from '../../bridge/bridge'
 import { downloadText, formatTime, truncateSession, ForkIcon } from './shared'
+import TimelinePanel from './TimelinePanel'
 
 export default function SessionPanel({ active, context, busy = false, showMsg }) {
   const [forking, setForking] = useState(false)
@@ -14,6 +16,8 @@ export default function SessionPanel({ active, context, busy = false, showMsg })
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [searching, setSearching] = useState(false)
+  // 对话历史回放时间线（v0.2.5 D1）
+  const [openTimeline, setOpenTimeline] = useState(false)
 
   const sessionId = truncateSession(context?.sessionId)
 
@@ -330,9 +334,25 @@ export default function SessionPanel({ active, context, busy = false, showMsg })
           >
             {sessionBusy === 'compress' ? '压缩中…' : '压缩（保留5轮）'}
           </button>
+          <button
+            type="button"
+            className="ep-btn ep-act-btn"
+            onClick={() => setOpenTimeline(true)}
+            disabled={!context?.sessionId}
+          >
+            时间线
+          </button>
         </div>
-        <div className="ep-note">归档/压缩仅对当前会话可用；导出为 Markdown/JSON 文件下载。</div>
+        <div className="ep-note">归档/压缩仅对当前会话可用；导出为 Markdown/JSON 文件下载；时间线回放当前会话历史。</div>
       </div>
+
+      {/* 对话历史回放时间线（全屏弹层，v0.2.5 D1） */}
+      <TimelinePanel
+        open={openTimeline}
+        onClose={() => setOpenTimeline(false)}
+        sessionId={context?.sessionId || null}
+        sessionLabel={context?.storyName || sessionId || ''}
+      />
     </section>
   )
 }
