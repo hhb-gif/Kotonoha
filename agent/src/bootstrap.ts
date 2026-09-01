@@ -8,6 +8,8 @@
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
+import { userPluginsDir, userExternalToolsDir } from './paths'
+
 import type {
   EventHub,
   HistoryEvent,
@@ -235,32 +237,59 @@ export async function bootstrap(hub: EventHub): Promise<{
     registry.register(createSkillTool(db), { source: 'default', allowOverride: true })
     const tools = registry.list()
 
-    // T3-plugins：扫描加载插件（目录为 src/tools/plugins 开发期 / dist/tools/plugins 编译后）
-    // 插件工具并入工具列表、插件钩子随引擎注入（与内置钩子共存）
+    // T3-plugins + E-userplug：扫描加载插件——先项目内（src/tools/plugins 开发期 /
+    // dist/tools/plugins 编译后），后用户级（~/.kotonoha/plugins/，KOTONOHA_HOME 可覆盖）
+    // 用户级放编译好的 JS 插件（TS 需先编译）；目录不存在 → loadPlugins 返回空结果
+    // 合并策略「先到先得」：项目内可信度优先，用户级同名工具跳过并 warn
     // 错误隔离：loadPlugins 内部已隔离单个插件失败，此处仅做工具重名保护
     const pluginDir = path.join(__dirname, 'tools', 'plugins')
-    const plugins = await loadPlugins(pluginDir)
-    for (const pt of plugins.tools) {
-      if (tools.some((t) => t.def.name === pt.def.name)) {
-        console.warn(`[plugins] 工具「${pt.def.name}」与现有工具重名，跳过该插件工具`)
-        continue
+    const pluginSources: { userLevel: boolean; dir: string }[] = [
+      { userLevel: false, dir: pluginDir },
+      { userLevel: true, dir: userPluginsDir() },
+    ]
+    const pluginHooks: import('./tools/hooks').Hook[] = []
+    for (const src of pluginSources) {
+      const loaded = await loadPlugins(src.dir)
+      for (const pt of loaded.tools) {
+        if (tools.some((t) => t.def.name === pt.def.name)) {
+          console.warn(
+            src.userLevel
+              ? `[plugins] 用户级插件 ${pt.def.name} 与内置重名，已跳过`
+              : `[plugins] 工具「${pt.def.name}」与现有工具重名，跳过该插件工具`
+          )
+          continue
+        }
+        tools.push(pt)
       }
-      tools.push(pt)
+      // 钩子直接合并（两目录共存，不查重——与既有单目录行为一致）
+      pluginHooks.push(...loaded.hooks)
     }
+    const plugins = { hooks: pluginHooks }
 
     const mcp = buildDefaultMCP()
 
-    // T2-external：配置驱动外接工具（tool.yaml → shell/HTTP 工具，不写核心代码）
-    // 配置目录：<agent>/tools/external（tool.yaml / *.tools.yaml）；目录不存在 → 空
+    // T2-external + E-userplug：配置驱动外接工具（tool.yaml → shell/HTTP 工具，不写核心代码）
+    // 配置目录：项目内 <agent>/tools/external + 用户级 ~/.kotonoha/tools/（*.tools.yaml）
+    // 目录不存在 → 空；合并策略同插件「先到先得」：项目内优先，用户级重名跳过并 warn
     // 错误隔离：loadExternalTools 内部已隔离单个文件失败，此处仅做工具重名保护
     const externalDir = path.join(__dirname, '..', 'tools', 'external')
-    const external = await loadExternalTools(externalDir)
-    for (const et of external.tools) {
-      if (tools.some((t) => t.def.name === et.def.name)) {
-        console.warn(`[external] 工具「${et.def.name}」与现有工具重名，跳过该外接工具`)
-        continue
+    const externalSources: { userLevel: boolean; dir: string }[] = [
+      { userLevel: false, dir: externalDir },
+      { userLevel: true, dir: userExternalToolsDir() },
+    ]
+    for (const src of externalSources) {
+      const external = await loadExternalTools(src.dir)
+      for (const et of external.tools) {
+        if (tools.some((t) => t.def.name === et.def.name)) {
+          console.warn(
+            src.userLevel
+              ? `[external] 用户级工具 ${et.def.name} 与内置重名，已跳过`
+              : `[external] 工具「${et.def.name}」与现有工具重名，跳过该外接工具`
+          )
+          continue
+        }
+        tools.push(et)
       }
-      tools.push(et)
     }
 
     const ops: RpcHandlerContext['ops'] = {

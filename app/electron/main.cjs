@@ -4,7 +4,10 @@
 //   2. 开发模式加载 vite dev server（5173）；生产加载 vite build 产物 dist/index.html
 //   3. 经 preload 把 agent 端口注入渲染层（window.__KOTONOHA_API_BASE__ / __KOTONOHA_WS_BASE__）
 //   4. 应用退出时回收 agent 子进程，避免孤儿进程
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
+//   5. 托盘常驻（仅打包环境）+ 关窗最小化到托盘 + 全局快捷键 Ctrl+Shift+K 唤起
+//   6. 生产模式注入 CSP 响应头（dev 走 vite HMR 不注入）
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, globalShortcut, session } =
+  require('electron')
 const { spawn } = require('child_process')
 const net = require('net')
 const fs = require('fs')
@@ -26,6 +29,11 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development'
 
 let win = null
 let agentProc = null
+let tray = null // 托盘实例（仅打包环境创建；创建失败保持 null，退回默认关窗行为）
+let forceQuit = false // 退出标志：托盘菜单「退出」等主动退出路径置 true，让 close 拦截放行
+let balloonShown = false // 首次最小化到托盘的 balloon 提示只弹一次
+// 托盘偏好（userData/tray-pref.json）：关闭时是否最小化到托盘，默认开
+let trayPref = { minimizeToTray: true }
 
 // ---- 单实例锁 ----
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -36,9 +44,38 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', () => {
     if (win) {
       if (win.isMinimized()) win.restore()
+      // 窗口可能被最小化到托盘（隐藏）：show 后再 focus 才能真正唤起
+      win.show()
       win.focus()
     }
   })
+}
+
+// ---- 托盘偏好（userData/tray-pref.json，简单 JSON 读写） ----
+
+/** 读取托盘偏好；文件缺失/损坏时返回默认值（minimizeToTray: true）。 */
+function readTrayPref() {
+  try {
+    const file = path.join(app.getPath('userData'), 'tray-pref.json')
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (raw && typeof raw === 'object') {
+      return { minimizeToTray: raw.minimizeToTray !== false }
+    }
+  } catch {
+    // 首次运行或读取失败：静默用默认值
+  }
+  return { minimizeToTray: true }
+}
+
+/** 写入托盘偏好（原子性要求不高，直接覆写；失败仅告警）。 */
+function writeTrayPref(pref) {
+  try {
+    const file = path.join(app.getPath('userData'), 'tray-pref.json')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify(pref, null, 2), 'utf8')
+  } catch (err) {
+    console.warn('[main] 写入托盘偏好失败:', err.message)
+  }
 }
 
 // ---- agent 子进程管理 ----
@@ -152,6 +189,97 @@ function buildAppMenu() {
   return Menu.buildFromTemplate(template)
 }
 
+// ---- 托盘 ----
+
+/** 显示并聚焦主窗口（托盘单击 / 托盘菜单 / 全局快捷键共用）。 */
+function showMainWindow() {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+/** 创建系统托盘（仅打包环境；dev 不建，关窗即退，避免开发困扰）。 */
+function createTray() {
+  if (!app.isPackaged) return
+  try {
+    // 打包后托盘图标用 extraResources 里的 resources/icon.ico（与窗口图标同源）
+    const iconPath = path.join(process.resourcesPath, 'icon.ico')
+    tray = new Tray(iconPath)
+    tray.setToolTip('Kotonoha')
+    // 单击托盘图标 → 显示主窗口
+    tray.on('click', showMainWindow)
+    // 右键菜单：显示主窗口 / ─ / 退出
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: '显示主窗口', click: showMainWindow },
+        { type: 'separator' },
+        {
+          label: '退出',
+          click: () => {
+            // 置退出标志，让窗口 close 拦截逻辑放行（否则 app.quit() 会被 hide 拦截吃掉）
+            forceQuit = true
+            app.quit()
+          },
+        },
+      ])
+    )
+    console.log('[main] 系统托盘已创建')
+  } catch (err) {
+    // 图标缺失等异常：静默降级，退回原关窗即退行为
+    console.warn('[main] 托盘创建失败，退回默认关窗行为:', err.message)
+    tray = null
+  }
+}
+
+// ---- 全局快捷键 ----
+
+/** 注册全局快捷键 Ctrl+Shift+K：切换主窗口显示/隐藏（唤起/最小化）。 */
+function registerGlobalShortcut() {
+  try {
+    const ok = globalShortcut.register('Control+Shift+K', () => {
+      if (win && win.isVisible() && !win.isMinimized()) {
+        win.hide()
+      } else {
+        showMainWindow()
+      }
+    })
+    // 注册失败（快捷键被其他应用占用等）：静默降级，不影响应用正常使用
+    if (!ok) console.warn('[main] 全局快捷键 Control+Shift+K 注册失败（可能被占用）')
+  } catch (err) {
+    console.warn('[main] 全局快捷键注册异常:', err.message)
+  }
+}
+
+// ---- CSP（仅生产） ----
+
+// 生产模式 CSP：file:// 产物无响应头，经 onHeadersReceived 注入。
+// connect-src 放行本地 agent（http/ws，端口随机所以用通配）；
+// style-src 'unsafe-inline' 允许内联样式；img-src file: 允许本地图片。
+const PROD_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: file:",
+  "connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* http://localhost:*",
+  'font-src \'self\' data:',
+].join('; ')
+
+/** 生产模式注入 CSP 响应头；dev 走 vite HMR（ws://5173）不注入，避免挡 HMR。 */
+function installProductionCSP() {
+  if (!app.isPackaged) return
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // 只对 file:// 响应（生产窗口加载的本地产物）注入；其余响应原样放行
+    if (!details.url.startsWith('file://')) return callback({})
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [PROD_CSP],
+      },
+    })
+  })
+}
+
 // ---- 窗口 ----
 
 function createWindow(agentPort) {
@@ -172,10 +300,33 @@ function createWindow(agentPort) {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // sandbox:true：preload 仅用 contextBridge/ipcRenderer/process.argv（均沙箱兼容），
+      // 兼容性已实测通过（渲染层可正常连接 agent）
+      sandbox: true,
       // 把 agent 端口以命令行参数传给渲染进程，preload 从 process.argv 读取后注入
       additionalArguments: [`--kotonoha-agent-port=${agentPort}`],
     },
+  })
+
+  // 关闭拦截：打包 + 托盘可用 + 开启「最小化到托盘」时，点 × 只隐藏窗口（驻留托盘）；
+  // 托盘菜单「退出」/更新安装等主动退出路径会置 forceQuit，直接放行真正关闭。
+  win.on('close', (event) => {
+    if (forceQuit || !app.isPackaged || !tray || !trayPref.minimizeToTray) return
+    event.preventDefault()
+    win.hide()
+    // 首次隐藏弹一次托盘 balloon 提示（仅 Windows；失败静默）
+    if (!balloonShown && process.platform === 'win32') {
+      balloonShown = true
+      try {
+        tray.displayBalloon({
+          iconType: 'info',
+          title: 'Kotonoha',
+          content: 'Kotonoha 已最小化到系统托盘，单击托盘图标可重新打开窗口。',
+        })
+      } catch {
+        // balloon 失败静默（个别精简版系统不支持）
+      }
+    }
   })
 
   if (isDev) {
@@ -187,6 +338,19 @@ function createWindow(agentPort) {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(buildAppMenu())
+  // 托盘偏好：读 userData/tray-pref.json（缺失/损坏用默认值）
+  trayPref = readTrayPref()
+  // 托盘偏好 IPC（供后续设置面板的「关闭时最小化到托盘」开关使用；本轮 UI 未接）
+  ipcMain.handle('prefs:getTrayPref', () => trayPref)
+  ipcMain.handle('prefs:setTrayPref', (_event, patch) => {
+    if (patch && typeof patch === 'object' && typeof patch.minimizeToTray === 'boolean') {
+      trayPref = { ...trayPref, minimizeToTray: patch.minimizeToTray }
+      writeTrayPref(trayPref)
+    }
+    return trayPref
+  })
+  // 生产模式 CSP 注入（须在窗口加载前挂上）
+  installProductionCSP()
   // 目录选择（新建项目选工作区）：返回绝对路径或 null（取消）
   ipcMain.handle('pick-directory', async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
@@ -208,6 +372,8 @@ app.whenReady().then(async () => {
   }
 
   createWindow(agentPort)
+  createTray()
+  registerGlobalShortcut()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(agentPort)
   })
@@ -220,16 +386,23 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  // 打包环境托盘常驻且开启「最小化到托盘」：窗口隐藏不算退出（darwin 习惯保留：不自动 quit）。
+  // 注意：关闭被拦截时窗口只是隐藏，正常不会触发本事件；此分支兜底 darwin Cmd+W 之外的场景。
+  if (app.isPackaged && tray && trayPref.minimizeToTray) return
   if (process.platform !== 'darwin') app.quit()
 })
 
 // 退出前回收 agent 子进程，避免孤儿进程
 // before-quit（正常退出）与 will-quit（任何退出路径，含崩溃兜底）都挂 killAgent
+// before-quit 同时置 forceQuit：任何 app.quit() 路径（托盘退出/更新安装/系统关机）都放行窗口关闭
 app.on('before-quit', () => {
+  forceQuit = true
   killAgent()
 })
 app.on('will-quit', () => {
   killAgent()
+  // 全局快捷键随应用退出注销，避免残留系统级占用
+  globalShortcut.unregisterAll()
 })
 
 // 主进程异常兜底：渲染进程崩溃/主进程未捕获异常时也回收 agent

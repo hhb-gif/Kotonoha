@@ -429,6 +429,7 @@ export {
   getBond,
   sessionFork, sessionRename, getCredentialsStatus, getMcpInfo,
 } from './rpc'
+import { onEvent } from './events'
 export { onEvent } from './events'
 export { respondApproval }
 

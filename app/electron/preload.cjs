@@ -4,6 +4,7 @@
 // agent 端口由主进程通过 additionalArguments（--kotonoha-agent-port=<port>）传入，
 // 保证打包后也能拿到实际随机端口（而非写死的 3080）。
 // __KOTONOHA_PICK_DIR__：弹出目录选择对话框（新建项目选工作区用）；浏览器环境无此能力。
+// __KOTONOHA_PREFS__：应用偏好读写（托盘开关等，存主进程 userData/tray-pref.json）。
 const { contextBridge, ipcRenderer } = require('electron')
 
 // 从 process.argv 解析主进程注入的 agent 端口；缺失/非法时为 null
@@ -21,6 +22,14 @@ const wsBase = agentPort ? `ws://127.0.0.1:${agentPort}` : ''
 contextBridge.exposeInMainWorld('__KOTONOHA_API_BASE__', apiBase)
 contextBridge.exposeInMainWorld('__KOTONOHA_WS_BASE__', wsBase)
 contextBridge.exposeInMainWorld('__KOTONOHA_PICK_DIR__', () => ipcRenderer.invoke('pick-directory'))
+
+// 应用偏好（设置面板用；本轮 pref 机制先就位，UI 后续版本接入）：
+//   getTrayPref 读取托盘偏好（{ minimizeToTray: boolean }）
+//   setTrayPref 部分更新托盘偏好（传 { minimizeToTray: boolean }），返回最新值
+contextBridge.exposeInMainWorld('__KOTONOHA_PREFS__', {
+  getTrayPref: () => ipcRenderer.invoke('prefs:getTrayPref'),
+  setTrayPref: (patch) => ipcRenderer.invoke('prefs:setTrayPref', patch),
+})
 
 // 应用内更新能力（设置面板「检查更新」用）：
 //   checkUpdate    手动触发更新检查（返回 { ok, state, version? }）

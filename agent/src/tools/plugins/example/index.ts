@@ -12,6 +12,14 @@
 //
 // 动态 import 由 loader 完成（开发期 index.ts 经 tsx、dist 期 index.js 经 node），
 // 插件代码无需关心运行环境。
+//
+// 用户级安装（E-userplug / v0.2.3 5.4）：
+//   把编译好的插件放到 ~/.kotonoha/plugins/<插件名>/（plugin.yaml + index.js），
+//   bootstrap 启动时自动加载，无需改动项目源码。注意：
+//   - 用户级放的是 JS（node 可直接 require），TS 插件需先用 tsc 等编译为 JS 再放入
+//   - 与项目内插件/内置工具重名时「先到先得」——项目内优先，用户级同名工具
+//     跳过并 console.warn（[plugins] 用户级插件 xx 与内置重名，已跳过）
+//   - KOTONOHA_HOME 环境变量可重定向用户级根目录（仅供测试；生产用真实 homedir）
 // 中文注释、英文标识符
 // ============================================================
 
