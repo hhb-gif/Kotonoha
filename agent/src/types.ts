@@ -365,6 +365,32 @@ export interface RpcHandlerContext {
     getRules: () => { tool: string; level: 'allow' | 'ask' | 'deny' }[]
     setRules: (rules: { tool: string; level: 'allow' | 'ask' | 'deny' }[]) => void
     listMcpServers: () => { id: string; type: string; status: string; tools?: string[] }[]
+    // v0.2.4 任务 B：MCP 配置化（用户自定义服务器 CRUD，运行态合并在 ops 内完成）
+    listMcpConfiguredServers?: () => Promise<{
+      servers: {
+        id: string
+        type: 'stdio' | 'sse'
+        command?: string
+        args?: string[]
+        url?: string
+        enabled: boolean
+        status: string
+        error?: string
+        tools: string[]
+      }[]
+      // 用户服务器对应的 registry 运行态 id 集合（前端区分 builtin / 用户项用）
+      managedRegistryIds: string[]
+    }>
+    addMcpServer?: (server: {
+      id: string
+      type: 'stdio' | 'sse'
+      command?: string
+      args?: string[]
+      url?: string
+      headers?: Record<string, string>
+    }) => Promise<{ ok: true }>
+    removeMcpServer?: (id: string) => Promise<{ ok: true }>
+    toggleMcpServer?: (id: string, enabled: boolean) => Promise<{ ok: true }>
     // T1-toolsets：工具集门类（渐进披露 + 会话级激活）
     listToolsets?: () => { name: string; description: string; tools: string[] }[]
     getActiveToolsets?: (sessionId: string) => string[]

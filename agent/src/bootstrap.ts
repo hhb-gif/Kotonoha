@@ -163,6 +163,15 @@ export async function bootstrap(hub: EventHub): Promise<{
     const { buildDefaultMCP } = require('./mcp') as {
       buildDefaultMCP: (cwd?: string) => import('./mcp').MCPManager
     }
+    const { loadMcpServerConfigs, saveMcpServerConfigs } = require('./store/mcp-config') as {
+      loadMcpServerConfigs: (
+        db: import('./store').Db
+      ) => import('./store/mcp-config').McpServerConfigEntry[]
+      saveMcpServerConfigs: (
+        db: import('./store').Db,
+        entries: import('./store/mcp-config').McpServerConfigEntry[]
+      ) => void
+    }
     const { getTotalCost, getSessionCost, exportAllCostCsv } = require('./store/cost') as {
       getTotalCost: (db: import('./store').Db) => {
         totalCostUsd: number
@@ -268,6 +277,32 @@ export async function bootstrap(hub: EventHub): Promise<{
 
     const mcp = buildDefaultMCP()
 
+    // v0.2.4 任务 B：MCP 配置化 —— 启动时读 settings 表用户配置，逐个注册 + 连接 enabled 的服务器
+    // 连接失败仅 warn 不阻断（registry 内部另有指数退避自动重连）；内置 3 个 builtin 不受影响
+    /** 用户配置 id → registry 运行态 shortId 映射（registry 自行生成 id，与配置 id 不同名） */
+    const mcpRegistryIdByConfigId = new Map<string, string>()
+    /** 曾经注册为用户服务器的 registry id 集合（前端区分 builtin / 用户域展示；remove 后保留避免残留行） */
+    const mcpManagedRegistryIds = new Set<string>()
+    /** 配置项 → registry 注册参数（剥掉 id/enabled 等非传输字段） */
+    const toRegistryConfig = (c: import('./store/mcp-config').McpServerConfigEntry) => ({
+      type: c.type,
+      command: c.command,
+      args: c.args,
+      url: c.url,
+      headers: c.headers,
+    })
+    for (const cfg of loadMcpServerConfigs(db)) {
+      if (cfg.enabled === false) continue
+      try {
+        const regId = mcp.registerServer(toRegistryConfig(cfg))
+        mcpRegistryIdByConfigId.set(cfg.id, regId)
+        mcpManagedRegistryIds.add(regId)
+        await mcp.connectServer(regId)
+      } catch (e) {
+        console.warn(`[mcp] 用户服务器「${cfg.id}」启动连接失败（不阻断）:`, (e as Error).message)
+      }
+    }
+
     // T2-external + E-userplug：配置驱动外接工具（tool.yaml → shell/HTTP 工具，不写核心代码）
     // 配置目录：项目内 <agent>/tools/external + 用户级 ~/.kotonoha/tools/（*.tools.yaml）
     // 目录不存在 → 空；合并策略同插件「先到先得」：项目内优先，用户级重名跳过并 warn
@@ -333,6 +368,73 @@ export async function bootstrap(hub: EventHub): Promise<{
           status: s.status,
           tools: s.tools.map((t) => t.def.name),
         })),
+      // v0.2.4 任务 B：MCP 配置化 RPC（用户服务器 CRUD，配置存 settings 表 `mcp:servers`）
+      listMcpConfiguredServers: async () => {
+        const runtime = new Map(mcp.listServers().map((s) => [s.id, s]))
+        const servers = loadMcpServerConfigs(db).map((c) => {
+          const regId = mcpRegistryIdByConfigId.get(c.id)
+          const r = regId ? runtime.get(regId) : undefined
+          return {
+            id: c.id,
+            type: c.type,
+            command: c.command,
+            args: c.args,
+            url: c.url,
+            enabled: c.enabled !== false,
+            status: r ? r.status : 'disconnected',
+            error: r?.error,
+            tools: r ? r.tools.map((t) => t.def.name) : [],
+          }
+        })
+        return { servers, managedRegistryIds: [...mcpManagedRegistryIds] }
+      },
+      addMcpServer: async (server) => {
+        const configs = loadMcpServerConfigs(db)
+        if (configs.some((c) => c.id === server.id)) {
+          throw new Error(`服务器 id 已存在：${server.id}`)
+        }
+        const entry = { ...server, enabled: true }
+        // 先注册（撞 builtin/重复项时抛错，不留脏配置），再落库，再连接
+        // 连接失败向上抛给前端 toast，但配置保留（enabled=true，下次启动自动重试）
+        const regId = mcp.registerServer(toRegistryConfig(entry))
+        saveMcpServerConfigs(db, [...configs, entry])
+        mcpRegistryIdByConfigId.set(entry.id, regId)
+        mcpManagedRegistryIds.add(regId)
+        await mcp.connectServer(regId)
+        return { ok: true as const }
+      },
+      removeMcpServer: async (id) => {
+        const configs = loadMcpServerConfigs(db)
+        const next = configs.filter((c) => c.id !== id)
+        if (next.length === configs.length) throw new Error(`未找到服务器配置：${id}`)
+        const regId = mcpRegistryIdByConfigId.get(id)
+        if (regId) {
+          await mcp.disconnectServer(regId)
+          mcpRegistryIdByConfigId.delete(id)
+          // registry 无反注册接口：断开即可（disconnected 残留不影响 agent，重启即消失）
+        }
+        saveMcpServerConfigs(db, next)
+        return { ok: true as const }
+      },
+      toggleMcpServer: async (id, enabled) => {
+        const configs = loadMcpServerConfigs(db)
+        const cfg = configs.find((c) => c.id === id)
+        if (!cfg) throw new Error(`未找到服务器配置：${id}`)
+        if (enabled) {
+          // 启用：尚未注册（如启动时 disabled 或重启后首次启用）先补注册，再连接
+          let regId = mcpRegistryIdByConfigId.get(id)
+          if (!regId || !mcp.getServer(regId)) {
+            regId = mcp.registerServer(toRegistryConfig(cfg))
+            mcpRegistryIdByConfigId.set(id, regId)
+            mcpManagedRegistryIds.add(regId)
+          }
+          await mcp.connectServer(regId)
+        } else if (mcpRegistryIdByConfigId.has(id)) {
+          await mcp.disconnectServer(mcpRegistryIdByConfigId.get(id)!)
+        }
+        saveMcpServerConfigs(db, configs.map((c) => (c.id === id ? { ...c, enabled } : c)))
+        return { ok: true as const }
+      },
       // T1-toolsets：工具集门类（list / active / set，会话级持久化到 db）
       listToolsets: () => listToolsets(),
       getActiveToolsets: (id) => {

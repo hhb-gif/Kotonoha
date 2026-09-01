@@ -8,7 +8,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc && node scripts/copy-plugin-assets.mjs",
     "test:plugins": "tsx scripts/test-plugins.mjs",
-    "mcp:serve": "node dist/mcp/serve.js"
+    "mcp:serve": "node dist/mcp/serve.js",
+    "cli": "node dist/cli.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -85,6 +85,25 @@ export const setRules = (rules) => setRulesRpc({ rules: rules || [] })
 /** MCP 服务器状态（mcp.status）：value { servers:[{id,type,status,tools?}] }（不自动连接）。 */
 export const mcpStatus = makeApi('mcp.status', { map: (v) => ({ servers: v?.servers || [] }) })
 
+// ---- MCP 配置化（v0.2.4 任务 B）：用户服务器 CRUD ----
+const mcpServersListRpc = makeApi('mcp.servers.list', {
+  map: (v) => ({ servers: v?.servers || [], managedRegistryIds: v?.managedRegistryIds || [] }),
+})
+/** 用户 MCP 服务器配置 + 运行态合并（mcp.servers.list）：value { servers, managedRegistryIds }。 */
+export const listMcpServers = () => mcpServersListRpc({})
+
+const addMcpServerRpc = makeApi('mcp.servers.add')
+/** 添加用户 MCP 服务器（mcp.servers.add）：payload { server:{id,type,command?,args?,url?,headers?} } → value { ok:true }。 */
+export const addMcpServer = (server) => addMcpServerRpc({ server })
+
+const removeMcpServerRpc = makeApi('mcp.servers.remove')
+/** 删除用户 MCP 服务器（mcp.servers.remove）：payload { id } → value { ok:true }。 */
+export const removeMcpServer = (id) => removeMcpServerRpc({ id })
+
+const toggleMcpServerRpc = makeApi('mcp.servers.toggle')
+/** 启用/禁用用户 MCP 服务器（mcp.servers.toggle）：payload { id, enabled } → value { ok:true }。 */
+export const toggleMcpServer = (id, enabled) => toggleMcpServerRpc({ id, enabled: !!enabled })
+
 const selectModelRpc = makeApi('session.selectModel', { guard: needSid })
 /** 切换会话模型（session.selectModel）：payload { sessionId, provider, model }。 */
 export function selectModel(provider, model, sessionId) {

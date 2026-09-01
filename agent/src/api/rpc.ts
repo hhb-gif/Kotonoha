@@ -270,6 +270,65 @@ const routes: Record<string, Route> = {
     return { servers: ctx.ops.listMcpServers() }
   },
 
+  // ---- v0.2.4 任务 B：MCP 配置化（用户服务器 CRUD，ops 注入；mcp.status 保持只读运行态）----
+
+  'mcp.servers.list': async (ctx) => {
+    if (!ctx.ops?.listMcpConfiguredServers) throw new Error('mcp.servers.list 未注入')
+    return ctx.ops.listMcpConfiguredServers()
+  },
+
+  'mcp.servers.add': async (ctx, p) => {
+    if (!ctx.ops?.addMcpServer) throw new Error('mcp.servers.add 未注入')
+    const raw = p.server
+    if (typeof raw !== 'object' || raw === null) throw new Error('server required')
+    const s = raw as Record<string, unknown>
+    const id = str(s, 'id')?.trim()
+    const type = str(s, 'type')
+    if (!id) throw new Error('id 不能为空')
+    if (type !== 'stdio' && type !== 'sse') throw new Error('type 必须是 stdio 或 sse')
+    const command = str(s, 'command')?.trim()
+    const url = str(s, 'url')?.trim()
+    if (type === 'stdio' && !command) throw new Error('stdio 类型必须提供 command')
+    if (type === 'sse' && !url) throw new Error('sse 类型必须提供 url')
+    // 组装净化的 payload（多余字段不带进持久化层）
+    const server: {
+      id: string
+      type: 'stdio' | 'sse'
+      command?: string
+      args?: string[]
+      url?: string
+      headers?: Record<string, string>
+    } = { id, type }
+    if (command) server.command = command
+    if (url) server.url = url
+    const args = strArray(s, 'args')
+    if (args) server.args = args
+    const headers = s.headers
+    if (typeof headers === 'object' && headers !== null) {
+      const clean: Record<string, string> = {}
+      for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+        if (typeof v === 'string') clean[k] = v
+      }
+      if (Object.keys(clean).length > 0) server.headers = clean
+    }
+    return ctx.ops.addMcpServer(server)
+  },
+
+  'mcp.servers.remove': async (ctx, p) => {
+    if (!ctx.ops?.removeMcpServer) throw new Error('mcp.servers.remove 未注入')
+    const id = str(p, 'id')
+    if (!id) throw new Error('id required')
+    return ctx.ops.removeMcpServer(id)
+  },
+
+  'mcp.servers.toggle': async (ctx, p) => {
+    if (!ctx.ops?.toggleMcpServer) throw new Error('mcp.servers.toggle 未注入')
+    const id = str(p, 'id')
+    if (!id) throw new Error('id required')
+    if (typeof p.enabled !== 'boolean') throw new Error('enabled 必须是 boolean')
+    return ctx.ops.toggleMcpServer(id, p.enabled)
+  },
+
   // ---- C-memory2（三层记忆 RPC）：memory.list / skills.list / skills.approve / skills.reject ----
 
   'memory.list': (ctx, p) => {
