@@ -352,6 +352,58 @@ export default function SettingsPanel({ open = false, onClose, settings, onChang
           </div>
         </section>
 
+        {/* 区块二点五：打字机音效 */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">打字机音效</h3>
+          <div className="settings-row">
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={settings?.typeSound !== false}
+                onChange={(e) => onChange({ typeSound: e.target.checked })}
+              />
+              <span className="settings-switch-track" />
+              <span className="settings-switch-thumb" />
+            </label>
+            <span className="settings-value">
+              {settings?.typeSound !== false ? '开启' : '关闭'}
+            </span>
+          </div>
+        </section>
+
+        {/* 区块二点六：背景音乐 */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">背景音乐</h3>
+          <div className="settings-row">
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={settings?.bgm !== false}
+                onChange={(e) => onChange({ bgm: e.target.checked })}
+              />
+              <span className="settings-switch-track" />
+              <span className="settings-switch-thumb" />
+            </label>
+            <span className="settings-value">
+              {settings?.bgm !== false ? '开启' : '关闭'}
+            </span>
+          </div>
+          {settings?.bgm !== false && (
+            <div className="settings-row" style={{ marginTop: '8px' }}>
+              <input
+                type="range"
+                className="settings-slider"
+                min="0"
+                max="100"
+                step="1"
+                value={settings?.bgmVolume ?? 50}
+                onChange={(e) => onChange({ bgmVolume: Number(e.target.value) })}
+              />
+              <span className="settings-value">{settings?.bgmVolume ?? 50}%</span>
+            </div>
+          )}
+        </section>
+
         {/* 区块三：立绘显示 */}
         <section className="settings-section">
           <h3 className="settings-section-title">立绘显示</h3>

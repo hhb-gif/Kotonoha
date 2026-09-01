@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from 'react'
 //   speed      每字间隔毫秒，默认 40
 //   onComplete 打完回调
 //   skipKey    外部跳过信号（变化即显示全文）
-export default function Typewriter({ text = '', speed = 40, onComplete, skipKey = 0 }) {
+//   onTypeSound 打字机音效回调（每个字符触发）
+export default function Typewriter({ text = '', speed = 40, onComplete, skipKey = 0, onTypeSound }) {
   const [count, setCount] = useState(0)
   const doneRef = useRef(false)
   const prevTextRef = useRef('')
@@ -45,6 +46,7 @@ export default function Typewriter({ text = '', speed = 40, onComplete, skipKey 
   useEffect(() => {
     const chars = Array.from(text)
     if (chars.length === 0) return
+    let lastCount = count
     const timer = setInterval(() => {
       setCount((c) => {
         if (c + 1 >= chars.length) {
@@ -55,11 +57,16 @@ export default function Typewriter({ text = '', speed = 40, onComplete, skipKey 
           }
           return chars.length
         }
+        // 触发音效（每个新字符）
+        if (onTypeSound && c + 1 > lastCount) {
+          onTypeSound(chars[c + 1] || '')
+        }
+        lastCount = c + 1
         return c + 1
       })
     }, speed)
     return () => clearInterval(timer)
-  }, [text, speed, onComplete])
+  }, [text, speed, onComplete, onTypeSound])
 
   // 跳过：直接显示全文
   useEffect(() => {

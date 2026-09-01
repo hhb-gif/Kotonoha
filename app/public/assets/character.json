@@ -1,0 +1,48 @@
+{
+  "_doc": "言叶立绘表情映射表。image 为立绘文件名（相对于 assets/），cssFilter 为降级时的 CSS filter/transform 近似方案。优先使用 image 文件，不存在时自动降级到 base + cssFilter。",
+  "base": "character.png",
+  "states": {
+    "neutral": {
+      "image": "character.png",
+      "label": "默认",
+      "cssFilter": "none",
+      "cssTransform": "none"
+    },
+    "thinking": {
+      "image": "character-thinking.png",
+      "label": "思考中",
+      "cssFilter": "saturate(0.7) brightness(0.92) hue-rotate(-10deg)",
+      "cssTransform": "none"
+    },
+    "happy": {
+      "image": "character-happy.png",
+      "label": "开心",
+      "cssFilter": "saturate(1.15) brightness(1.05) hue-rotate(8deg)",
+      "cssTransform": "scale(1.03)"
+    },
+    "sad": {
+      "image": "character-sad.png",
+      "label": "低落",
+      "cssFilter": "saturate(0.6) brightness(0.88) hue-rotate(-15deg)",
+      "cssTransform": "translateY(4px)"
+    },
+    "love": {
+      "image": "character-love.png",
+      "label": "心动",
+      "cssFilter": "saturate(1.2) brightness(1.08) hue-rotate(12deg)",
+      "cssTransform": "none"
+    },
+    "angry": {
+      "image": "character-angry.png",
+      "label": "生气",
+      "cssFilter": "saturate(1.1) brightness(0.95) hue-rotate(-8deg) contrast(1.05)",
+      "cssTransform": "none"
+    },
+    "surprise": {
+      "image": "character-surprise.png",
+      "label": "惊讶",
+      "cssFilter": "saturate(1.1) brightness(1.08)",
+      "cssTransform": "scale(1.06)"
+    }
+  }
+}

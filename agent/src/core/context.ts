@@ -34,7 +34,9 @@ export function buildSystemPrompt(
     // 角色卡不存在 → 保持内置默认
   }
   const note = cwdNote ?? `当前工作区：${session.cwd}`
-  return `${base}\n\n${note}`
+  const emotionGuide =
+    '\n\n【情绪表达】每次回复末尾请附上一行情绪标签，格式：[emotion:happy/sad/thinking/love/angry/surprise/neutral]。仅使用这7种情绪之一。标签独占一行，不要有其他内容。'
+  return `${base}\n\n${note}${emotionGuide}`
 }
 
 /**

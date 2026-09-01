@@ -78,6 +78,7 @@ export type Chunk =
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-delta' }
   | { type: 'tool-call-delta'; toolCall: { name: string } }
+  | { type: 'emotion-change'; emotion: string }
   | { type: 'finish'; reason: FinishReason }
 
 // ---- 历史事件（session.history 返回，bridge historyToMessages 解析）----

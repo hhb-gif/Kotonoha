@@ -13,6 +13,7 @@ import type {
   SessionRecord,
   ToolResult,
 } from '../types'
+import { extractEmotion } from './emotion'
 import type { ExtendedTool } from '../tools/protocol'
 import { buildSystemPrompt, historyToChatMessages } from './context'
 import { createDefaultHooks, runToolWithHooks, type Hook, type HookRegistry } from '../tools/hooks'
@@ -110,6 +111,7 @@ export class TurnRunner {
       })
 
       // 2. 可迭代多轮：模型可能在文本之后请求工具
+      this.emitChunk({ type: 'emotion-change', emotion: 'thinking' })
       for (;;) {
         // 中断检查：abort 后不再发起新的模型请求
         this.throwIfAborted(signal)
@@ -237,14 +239,17 @@ export class TurnRunner {
       }
 
       // 3. 正常结束：finish stop + 落库 assistant/message
+      // 情绪：从完成文本提取情绪标签，发出 emotion-change，落库纯文本
+      const { emotion, cleanText } = extractEmotion(assistantText)
+      this.emitChunk({ type: 'emotion-change', emotion })
       this.emitChunk({ type: 'finish', reason: { kind: 'stop' } })
-      if (assistantText) {
+      if (cleanText) {
         this.deps.db.appendEvent(session.id, {
           type: 'assistant/message',
           data: {
             message: {
               role: 'assistant',
-              content: [{ type: 'text', text: assistantText }],
+              content: [{ type: 'text', text: cleanText }],
             },
           },
         })
@@ -258,6 +263,7 @@ export class TurnRunner {
         : err instanceof Error
           ? err.message
           : String(err)
+      this.emitChunk({ type: 'emotion-change', emotion: interrupted ? 'thinking' : 'sad' })
       this.emitChunk({ type: 'finish', reason: { kind: 'error', message } })
     } finally {
       // 5. 刷新 last_active_at

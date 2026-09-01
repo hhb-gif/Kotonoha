@@ -265,6 +265,9 @@ function handleSessionEvent(ev) {
         emit({ type: 'model', delta: chunk.text })
       } else if (chunk.type === 'reasoning-delta') {
         emit({ type: 'status', state: 'thinking', detail: '思考中…' })
+      } else if (chunk.type === 'emotion-change') {
+        // 情绪状态变化：传递给 App 驱动立绘切换
+        emit({ type: 'emotion', state: chunk.emotion || 'neutral' })
       } else if (chunk.type === 'tool-call-delta') {
         const name = chunk.toolCall?.name || '技能'
         emit({ type: 'status', state: 'action', detail: name })

@@ -13,6 +13,7 @@ import Typewriter from './Typewriter'
 //   skipSignal  跳过信号（变化即显示全文）
 //   onComplete  打字完成回调
 //   onSkip      点击对话框（跳过打字 / 推进下一页）
+//   onTypeSound 打字机音效回调（每个字符触发）
 export default function DialogBox({
   speaker = '',
   text = '',
@@ -22,12 +23,19 @@ export default function DialogBox({
   skipSignal = 0,
   onComplete,
   onSkip,
+  onTypeSound,
 }) {
   return (
     <div className={`dialog-box ${typing ? 'is-typing' : ''}`} onClick={onSkip}>
       {speaker && <div className="dialog-name">{speaker}</div>}
       <div className="dialog-text">
-        <Typewriter text={text} speed={speed} onComplete={onComplete} skipKey={skipSignal} />
+        <Typewriter
+          text={text}
+          speed={speed}
+          onComplete={onComplete}
+          skipKey={skipSignal}
+          onTypeSound={onTypeSound}
+        />
       </div>
       {pageDone && !typing && (
         <div className="dialog-advance">▼ 按 Enter 继续</div>

@@ -44,6 +44,18 @@ body {
   animation: bg-fade-in 1.2s ease-out;
 }
 
+/* 背景过渡动画（fade） */
+.bg-transition-fade {
+  animation: bg-fade 0.4s ease-in-out;
+}
+
+/* 旧背景图（保留直到过渡完成） */
+.background-image-prev {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .background-veil {
   position: absolute;
   inset: 0;
@@ -71,6 +83,74 @@ body {
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 0 24px rgba(200, 160, 220, 0.25));
+  /* 情绪切换时平滑过渡 */
+  transition: filter 0.3s ease, transform 0.3s ease;
+  /* idle 呼吸动画 */
+  animation: sprite-breathe 4s ease-in-out infinite;
+}
+
+/* ---- 情绪状态：CSS transition 淡入淡出 ---- */
+/* 每种情绪叠加对应的 filter/transform（仅在无独立图片时生效） */
+.character-sprite.character-neutral img {
+  /* 默认无额外滤镜 */
+}
+
+.character-sprite.character-thinking img {
+  animation: sprite-breathe 4s ease-in-out infinite, sprite-think 2.5s ease-in-out infinite;
+}
+
+.character-sprite.character-happy img {
+  animation: sprite-breathe 3.8s ease-in-out infinite, sprite-happy 3s ease-in-out infinite;
+}
+
+.character-sprite.character-sad img {
+  animation: sprite-breathe 5s ease-in-out infinite;
+}
+
+.character-sprite.character-love img {
+  animation: sprite-breathe 3.6s ease-in-out infinite, sprite-love 2.8s ease-in-out infinite;
+}
+
+.character-sprite.character-angry img {
+  animation: sprite-breathe 3s ease-in-out infinite, sprite-angry 0.15s linear infinite;
+}
+
+.character-sprite.character-surprise img {
+  animation: sprite-breathe 3.5s ease-in-out infinite, sprite-surprise 0.4s ease-out;
+}
+
+/* ---- idle 呼吸动画（持续循环，所有情绪共享） ---- */
+@keyframes sprite-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* ---- 情绪专属微动画 ---- */
+@keyframes sprite-think {
+  0%, 100% { opacity: 0.88; }
+  50% { opacity: 0.78; }
+}
+
+@keyframes sprite-happy {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.01); }
+}
+
+@keyframes sprite-love {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 24px rgba(200, 160, 220, 0.25)); }
+  50% { transform: translateY(-3px); filter: drop-shadow(0 0 32px rgba(255, 150, 200, 0.45)); }
+}
+
+@keyframes sprite-angry {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.5px); }
+  75% { transform: translateX(1.5px); }
+}
+
+@keyframes sprite-surprise {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+  100% { transform: scale(1); }
 }
 
 /* ---- 顶部标题栏 ---- */
@@ -293,6 +373,12 @@ body {
 @keyframes bg-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* 背景过渡动画（scale + opacity） */
+@keyframes bg-fade {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes sprite-in {

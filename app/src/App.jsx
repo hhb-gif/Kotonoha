@@ -16,6 +16,8 @@ import SelectScreen from './components/SelectScreen'
 import EscapePanel from './components/EscapePanel'
 import LogViewer from './components/LogViewer'
 import Onboarding from './components/Onboarding'
+import useTypeSound from './hooks/useTypeSound'
+import useBGM from './hooks/useBGM'
 
 // 首次使用引导标记：localStorage 存在即不再显示
 const ONBOARDING_KEY = 'kotonoha:onboarding-done'
@@ -99,10 +101,26 @@ export default function App() {
   const [actionDetail, setActionDetail] = useState('') // 当前技能名（action 状态）
   const [skipCounter, setSkipCounter] = useState(0) // 点击跳过信号
   const [streamingText, setStreamingText] = useState('') // 模型流式输出累积
+  const [emotion, setEmotion] = useState('neutral')     // 立绘情绪（E2-sprite：7 种表情）
   const [savedAt, setSavedAt] = useState(null)
   const [toast, setToast] = useState('')
   const [settings, setSettingsState] = useState(() => getSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // 打字机音效 hook
+  const typeSoundEnabled = settings?.typeSound !== false
+  const { play: playTypeSound, preload: preloadTypeSound } = useTypeSound(typeSoundEnabled, 0.3)
+
+  // 背景音乐 hook
+  const bgmEnabled = settings?.bgm !== false
+  const bgmVolume = (settings?.bgmVolume ?? 50) / 100
+  const { play: playBGM, stop: stopBGM, setScene: setBGMScene } = useBGM(bgmEnabled, bgmVolume)
+
+  // 场景切换时更新 BGM
+  useEffect(() => {
+    setBGMScene(settings.scene)
+  }, [settings.scene, setBGMScene])
+
   // 首次使用引导：localStorage 无标记时显示
   const [onboardingOpen, setOnboardingOpen] = useState(() => {
     try {
@@ -264,6 +282,10 @@ export default function App() {
         setStatus(ev.state)
         setActionDetail(ev.detail || '')
         if (ev.state === 'thinking' || ev.state === 'action') setTyping(true)
+      } else if (ev.type === 'emotion') {
+        // E1 后端情绪协议：后端 emit { type:'emotion', state:'happy'|'thinking'|... }
+        // E1 合入后无缝切换，此处直接设置 emotion
+        if (ev.state) setEmotion(ev.state)
       } else if (ev.type === 'error') {
         // 出错：撤掉尾部空占位，回到可输入状态
         setMessages((prev) => {
@@ -302,6 +324,26 @@ export default function App() {
   useEffect(() => {
     bridge.init()
   }, [])
+
+  // ---- 状态→情绪映射（E1 合入前的降级方案）----
+  // E1 后端会 emit emotion 事件，此处仅在无 emotion 事件时根据 status 推导
+  // E1 合入后，bridge emotion 事件优先级高于此 fallback
+  useEffect(() => {
+    // 若已收到过 bridge emotion 事件，则不再由 status 覆盖
+    // （通过一个 ref 标记：首次收到 emotion 事件后锁死，不再 fallback）
+    // 此处简化处理：status 变化时总是推导 emotion，但 bridge.onEvent 的 emotion 分支优先
+    if (status === 'thinking') {
+      setEmotion('thinking')
+    } else if (status === 'action') {
+      setEmotion('happy')
+    } else if (status === 'ready') {
+      // ready 状态：如果当前是 thinking/action 刚结束，回到 neutral
+      setEmotion((prev) => {
+        if (prev === 'thinking' || prev === 'action') return 'neutral'
+        return prev // 保持其他情绪（如 bridge 设置的 happy/sad 等）
+      })
+    }
+  }, [status])
 
   // ---- 打字完成：玩家自己的话打完直接切到模型回复；模型的话分页停留等待 Enter ----
   // 注意：onComplete 可能在流式期间触发（占位空文本/流式页打完），
@@ -646,9 +688,13 @@ export default function App() {
     const last = ctx?.storyId ? stories.getStory(ctx.storyId) : null
     return (
       <div className="stage">
-        <Background src={`assets/${settings.scene}.png`} />
+        <Background
+          src={`assets/${settings.scene}.png`}
+          transition="fade"
+          scene={settings.scene}
+        />
         {settings.showCharacter !== false && (
-          <CharacterSprite src="assets/character.png" name="言叶" />
+          <CharacterSprite emotion={emotion} src="assets/character.png" name="言叶" />
         )}
         <MainMenu
           onNewGame={() => goSelect('new')}
@@ -681,7 +727,11 @@ export default function App() {
   if (page === 'select') {
     return (
       <div className="stage">
-        <Background src={`assets/${settings.scene}.png`} />
+        <Background
+          src={`assets/${settings.scene}.png`}
+          transition="fade"
+          scene={settings.scene}
+        />
         <SelectScreen
           mode={selectMode}
           onPickSave={handlePickSave}
@@ -697,9 +747,13 @@ export default function App() {
   // ---- 对话界面 ----
   return (
     <div className="stage">
-      <Background src={`assets/${settings.scene}.png`} />
+      <Background
+        src={`assets/${settings.scene}.png`}
+        transition="fade"
+        scene={settings.scene}
+      />
       {settings.showCharacter !== false && (
-        <CharacterSprite src="assets/character.png" name="言叶" />
+        <CharacterSprite emotion={emotion} src="assets/character.png" name="言叶" />
       )}
       <TopBar
         scene={SCENE_LABELS[settings.scene] || settings.scene}
@@ -722,6 +776,7 @@ export default function App() {
             skipSignal={skipCounter}
             onComplete={handleTypeComplete}
             onSkip={handleDialogClick}
+            onTypeSound={playTypeSound}
           />
         )
       )}
