@@ -80,6 +80,15 @@ function interpolateConfig(config: MCPServerConfig, cwd: string): MCPServerConfi
 
 export { MCPRegistry } from './registry'
 export { MCPClient } from './client'
-export { createMCPServer, startStdioServer } from './server'
+// MCP Server 模式：懒加载（@modelcontextprotocol/sdk 为可选运行时依赖，
+// 打包产物默认不携带——bootstrap 不得静态依赖本导出，否则缺 SDK 时整引擎降级 stub）
+export function createMCPServer(...args: Parameters<typeof import('./server').createMCPServer>) {
+  const mod = require('./server') as typeof import('./server')
+  return mod.createMCPServer(...args)
+}
+export function startStdioServer(...args: Parameters<typeof import('./server').startStdioServer>) {
+  const mod = require('./server') as typeof import('./server')
+  return mod.startStdioServer(...args)
+}
 export type { MCPServerConfig, MCPTool, MCPToolResult, MCPConnection } from './client'
 export type { RegisteredServer } from './registry'
