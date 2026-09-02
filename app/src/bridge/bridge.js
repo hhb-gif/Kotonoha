@@ -259,6 +259,7 @@ function historyToMessages(events) {
 async function replayHistory() {
   const hist = await api('session.history', { sessionId: state.sessionId })
   const messages = historyToMessages(hist?.events)
+  console.log('[bridge] replayHistory sid=' + state.sessionId + ' events=' + (hist?.events?.length ?? 'undefined') + ' -> messages=' + messages.length)
   emit({ type: 'replay', messages })
 }
 
@@ -344,7 +345,19 @@ export function updateSavePreview(text) {
 
 /** 离开对话（回主界面）：不销毁会话，保留 context 供「继续」。 */
 export function leaveDialog() {
-  // 仅断开 UI 绑定，会话保留在 dsh；再次进入由 enterStory 恢复
+  // 退出对话时：把当前会话绑定回 context 指向的存档
+  // （覆盖 ESC「新对话」/ Fork 等路径建的未绑定会话——保证退出重进能看到最近对话）
+  try {
+    const ctx = stories.getContext()
+    if (ctx?.storyId && ctx?.saveId && state.sessionId) {
+      const save = stories.getSave(ctx.storyId, ctx.saveId)
+      if (save && save.sessionId !== state.sessionId) {
+        stories.updateSave(ctx.storyId, ctx.saveId, { sessionId: state.sessionId })
+      }
+    }
+  } catch (err) {
+    console.warn('[bridge] leaveDialog 绑定会话失败:', err.message)
+  }
 }
 
 // ---- 对话 ----

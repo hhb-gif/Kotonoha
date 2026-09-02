@@ -83,6 +83,7 @@ export default function useBridgeEvents(showToast) {
       } else if (ev.type === 'replay') {
         // 历史重放（初始化/读档/新游戏）：整批替换
         const msgs = ev.messages || []
+        log('replay', { count: msgs.length })
         setMessages(msgs)
         setShownIndex(Math.max(0, msgs.length - 1))
         setStreamingText('')
