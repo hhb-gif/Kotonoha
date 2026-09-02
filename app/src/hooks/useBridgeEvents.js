@@ -67,6 +67,9 @@ export default function useBridgeEvents(showToast) {
       } else if (ev.type === 'model:done') {
         // 模型回复完成：把尾部占位消息补全为完整文本。
         // Typewriter 识别「完整文本 startsWith 已显示部分」继续打完剩余，不重复。
+        // 注意：保持 typing=true 让打字机把补全后的剩余文本播完，
+        // 由 handleTypeComplete → setPageDone(true) 停留等待 Enter；
+        // 若此处提前 setTyping(false)，isPlayerTurn 立即为真 → 回复闪一下直接跳输入框。
         log('model:done', { textLen: (ev.text || '').length })
         setMessages((prev) => {
           const next = [...prev]
@@ -77,8 +80,6 @@ export default function useBridgeEvents(showToast) {
           return next
         })
         setStreamingText('')
-        // 补全完成后从当前页继续（流式期间已按页显示，无全文闪现跳变）
-        setTyping(false)
         bridge.updateSavePreview(ev.text || '')
       } else if (ev.type === 'replay') {
         // 历史重放（初始化/读档/新游戏）：整批替换
@@ -124,6 +125,8 @@ export default function useBridgeEvents(showToast) {
           if (last && last.role === 'model' && last.text === '') return prev.slice(0, -1)
           return prev
         })
+        setTyping(false) // 占位撤了必须退出打字态，否则 isPlayerTurn 永假卡死
+        setStreamingText('')
         showToast(ev.message)
       } else if (ev.type === 'degraded') {
         // 主 provider 失败，后端已切 fallback 重试：toast 提示，对话保持进行
