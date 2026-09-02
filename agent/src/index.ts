@@ -79,7 +79,8 @@ function handleRespond(
   const value = result.value as Record<string, unknown> | undefined
   if (!value) return false
   const outcome = value.outcome
-  if (outcome !== 'allowed-once' && outcome !== 'rejected') return false
+  // 'always'（始终允许）由 Approver 内部持久化规则并按 allowed-once 结算
+  if (outcome !== 'allowed-once' && outcome !== 'always' && outcome !== 'rejected') return false
   return approver.respond(b.rpcId, outcome)
 }
 

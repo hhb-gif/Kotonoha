@@ -34,7 +34,7 @@ export interface ApprovalRespondBody {
   rpcId: string
   result: {
     ok: true
-    value: { sessionId: string; approvalId: string; outcome: 'allowed-once' | 'rejected' }
+    value: { sessionId: string; approvalId: string; outcome: 'allowed-once' | 'always' | 'rejected' }
   }
 }
 
@@ -165,7 +165,7 @@ export interface ToolContext {
     toolName: string,
     callId: string,
     reason: string
-  ): Promise<'allowed-once' | 'rejected'>
+  ): Promise<'allowed-once' | 'always' | 'rejected'>
   emit(ev: SessionEvent): void
 }
 
@@ -307,8 +307,8 @@ export interface EngineDeps {
       toolName: string,
       callId: string,
       reason: string
-    ): Promise<'allowed-once' | 'rejected'>
-    respond(rpcId: string, outcome: 'allowed-once' | 'rejected'): boolean
+    ): Promise<'allowed-once' | 'always' | 'rejected'>
+    respond(rpcId: string, outcome: 'allowed-once' | 'always' | 'rejected'): boolean
   }
   secrets: SecretsStore
   broadcast(frame: OutboundFrame): void
@@ -338,8 +338,8 @@ export interface RpcHandlerContext {
       toolName: string,
       callId: string,
       reason: string
-    ): Promise<'allowed-once' | 'rejected'>
-    respond(rpcId: string, outcome: 'allowed-once' | 'rejected'): boolean
+    ): Promise<'allowed-once' | 'always' | 'rejected'>
+    respond(rpcId: string, outcome: 'allowed-once' | 'always' | 'rejected'): boolean
   }
   secrets: SecretsStore
   // Round-2 扩展能力（H2：可选注入，未注入时对应 RPC 返回 METHOD_NOT_FOUND）

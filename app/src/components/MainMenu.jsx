@@ -112,7 +112,7 @@ export default function MainMenu({
           <span className="main-menu-item-arrow" aria-hidden="true">›</span>
         </button>
       </nav>
-      <footer className="main-menu-version">v0.2.0</footer>
+      <footer className="main-menu-version">v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}</footer>
     </div>
   )
 }
