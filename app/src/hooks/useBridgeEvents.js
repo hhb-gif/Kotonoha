@@ -65,11 +65,9 @@ export default function useBridgeEvents(showToast) {
         }
         setStreamingText((prev) => prev + ev.delta)
       } else if (ev.type === 'model:done') {
-        // 模型回复完成：把尾部占位消息补全为完整文本。
-        // Typewriter 识别「完整文本 startsWith 已显示部分」继续打完剩余，不重复。
-        // 注意：保持 typing=true 让打字机把补全后的剩余文本播完，
-        // 由 handleTypeComplete → setPageDone(true) 停留等待 Enter；
-        // 若此处提前 setTyping(false)，isPlayerTurn 立即为真 → 回复闪一下直接跳输入框。
+        // 模型回复完成：补全尾部消息 + 直接停留展示（pageDone）。
+        // 简化时序：流式期间用户已看过打字过程，补全部分直接显示；
+        // 此前「保持 typing 续播」依赖 Typewriter 增量判定 + 多状态竞态，实际会闪跳。
         log('model:done', { textLen: (ev.text || '').length })
         setMessages((prev) => {
           const next = [...prev]
@@ -80,6 +78,8 @@ export default function useBridgeEvents(showToast) {
           return next
         })
         setStreamingText('')
+        setTyping(false)
+        setPageDone(true) // 停留等待 Enter/点击确认，再进入玩家回合
         bridge.updateSavePreview(ev.text || '')
       } else if (ev.type === 'replay') {
         // 历史重放（初始化/读档/新游戏）：整批替换
